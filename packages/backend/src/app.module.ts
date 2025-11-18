@@ -19,6 +19,17 @@ import { AIModule } from './modules/ai/ai.module';
 // Module-specific
 import { RestaurantModule } from './modules/restaurant/restaurant.module';
 
+// New Extended Features
+import { LoyaltyModule } from './modules/loyalty/loyalty.module';
+import { EmployeesModule } from './modules/employees/employees.module';
+import { TransfersModule } from './modules/transfers/transfers.module';
+import { InvoicingModule } from './modules/invoicing/invoicing.module';
+import { DeliveryModule } from './modules/delivery/delivery.module';
+import { LayawayModule } from './modules/layaway/layaway.module';
+import { PromotionsModule } from './modules/promotions/promotions.module';
+import { AdvancedAIModule } from './modules/advanced-ai/advanced-ai.module';
+import { FraudDetectionModule } from './modules/fraud-detection/fraud-detection.module';
+
 @Module({
   imports: [
     // Configuration
@@ -49,6 +60,17 @@ import { RestaurantModule } from './modules/restaurant/restaurant.module';
 
     // Module-specific
     RestaurantModule,
+
+    // New Extended Features
+    LoyaltyModule,
+    EmployeesModule,
+    TransfersModule,
+    InvoicingModule,
+    DeliveryModule,
+    LayawayModule,
+    PromotionsModule,
+    AdvancedAIModule,
+    FraudDetectionModule,
   ],
 })
 export class AppModule {}

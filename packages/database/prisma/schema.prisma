@@ -39,6 +39,9 @@ model User {
   orders             Order[]          @relation("WaiterOrders")
   aiQueries          AIQuery[]
   reports            Report[]
+  shifts             EmployeeShift[]
+  commissions        Commission[]
+  createdTransfers   InventoryTransfer[] @relation("TransferCreatedBy")
 
   @@index([email])
   @@index([branchId])
@@ -73,6 +76,12 @@ model Branch {
   suppliers          Supplier[]
   settings           Settings[]
   reports            Report[]
+  loyaltyPrograms    LoyaltyProgram[]
+  promotions         Promotion[]
+  transfersFrom      InventoryTransfer[] @relation("TransferFromBranch")
+  transfersTo        InventoryTransfer[] @relation("TransferToBranch")
+  deliveryOrders     DeliveryOrder[]
+  invoices           Invoice[]
 
   @@index([moduleType])
   @@map("branches")
@@ -325,7 +334,10 @@ model Customer {
   deletedAt      DateTime?
 
   // Relations
-  sales          Sale[]
+  sales              Sale[]
+  loyaltyTransactions LoyaltyTransaction[]
+  preferences        CustomerPreference[]
+  layaways           Layaway[]
 
   @@index([branchId])
   @@index([phone])
@@ -596,6 +608,539 @@ model Settings {
 }
 
 // ============================================
+// LOYALTY & CUSTOMER ENGAGEMENT MODELS
+// ============================================
+
+model LoyaltyProgram {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  pointsPerDollar   Decimal  @db.Decimal(10, 2)
+  dollarPerPoint    Decimal  @db.Decimal(10, 2)
+  minPointsToRedeem Int      @default(100)
+  isActive          Boolean  @default(true)
+
+  branchId          String
+  branch            Branch   @relation(fields: [branchId], references: [id])
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  transactions      LoyaltyTransaction[]
+
+  @@map("loyalty_programs")
+}
+
+model LoyaltyTransaction {
+  id          String   @id @default(cuid())
+  points      Int
+  type        LoyaltyTransactionType
+  description String?
+
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  programId   String
+  program     LoyaltyProgram @relation(fields: [programId], references: [id])
+
+  saleId      String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([customerId])
+  @@index([programId])
+  @@map("loyalty_transactions")
+}
+
+model CustomerPreference {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id])
+
+  productId    String?
+  categoryId   String?
+
+  frequency    Int      @default(0)
+  lastPurchase DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([customerId])
+  @@map("customer_preferences")
+}
+
+// ============================================
+// EMPLOYEE MANAGEMENT MODELS
+// ============================================
+
+model EmployeeShift {
+  id         String    @id @default(cuid())
+  startTime  DateTime
+  endTime    DateTime?
+  totalHours Decimal?  @db.Decimal(10, 2)
+  notes      String?
+
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([startTime])
+  @@map("employee_shifts")
+}
+
+model Commission {
+  id              String   @id @default(cuid())
+  amount          Decimal  @db.Decimal(10, 2)
+  percentage      Decimal  @db.Decimal(5, 2)
+  baseSaleAmount  Decimal  @db.Decimal(10, 2)
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+
+  saleId          String
+
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@map("commissions")
+}
+
+// ============================================
+// PROMOTIONS & COMBOS MODELS
+// ============================================
+
+model Promotion {
+  id              String     @id @default(cuid())
+  name            String
+  description     String?
+  type            PromotionType
+  discountType    DiscountType
+  discountValue   Decimal    @db.Decimal(10, 2)
+  startDate       DateTime
+  endDate         DateTime
+  isActive        Boolean    @default(true)
+  conditions      Json?
+
+  branchId        String
+  branch          Branch     @relation(fields: [branchId], references: [id])
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Relations
+  comboProducts   ComboProduct[]
+
+  @@index([branchId])
+  @@index([isActive])
+  @@map("promotions")
+}
+
+model ComboProduct {
+  id          String    @id @default(cuid())
+  quantity    Int       @default(1)
+
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  productId   String
+
+  createdAt   DateTime  @default(now())
+
+  @@index([promotionId])
+  @@map("combo_products")
+}
+
+// ============================================
+// MULTI-BRANCH TRANSFER MODELS
+// ============================================
+
+model InventoryTransfer {
+  id            String         @id @default(cuid())
+  transferNumber String        @unique
+  status        TransferStatus @default(PENDING)
+  notes         String?
+
+  fromBranchId  String
+  fromBranch    Branch         @relation("TransferFromBranch", fields: [fromBranchId], references: [id])
+
+  toBranchId    String
+  toBranch      Branch         @relation("TransferToBranch", fields: [toBranchId], references: [id])
+
+  createdById   String
+  createdBy     User           @relation("TransferCreatedBy", fields: [createdById], references: [id])
+
+  sentAt        DateTime?
+  receivedAt    DateTime?
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  items         TransferItem[]
+
+  @@index([fromBranchId])
+  @@index([toBranchId])
+  @@index([status])
+  @@map("inventory_transfers")
+}
+
+model TransferItem {
+  id         String            @id @default(cuid())
+  quantity   Decimal           @db.Decimal(10, 3)
+
+  productId  String
+
+  transferId String
+  transfer   InventoryTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime          @default(now())
+
+  @@index([transferId])
+  @@map("transfer_items")
+}
+
+// ============================================
+// DELIVERY INTEGRATION MODELS
+// ============================================
+
+model DeliveryOrder {
+  id              String         @id @default(cuid())
+  orderNumber     String         @unique
+  provider        DeliveryProvider
+  externalId      String?
+  status          DeliveryStatus @default(PENDING)
+  deliveryFee     Decimal        @db.Decimal(10, 2)
+
+  customerName    String
+  customerPhone   String
+  deliveryAddress String
+  notes           String?
+
+  branchId        String
+  branch          Branch         @relation(fields: [branchId], references: [id])
+
+  orderId         String?
+
+  assignedAt      DateTime?
+  pickedUpAt      DateTime?
+  deliveredAt     DateTime?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([branchId])
+  @@index([provider])
+  @@index([status])
+  @@map("delivery_orders")
+}
+
+// ============================================
+// LAYAWAY (APARTADOS) MODELS
+// ============================================
+
+model Layaway {
+  id              String        @id @default(cuid())
+  layawayNumber   String        @unique
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  paidAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  remainingAmount Decimal       @db.Decimal(10, 2)
+  status          LayawayStatus @default(ACTIVE)
+  dueDate         DateTime
+
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id])
+
+  notes           String?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  items           LayawayItem[]
+  payments        LayawayPayment[]
+
+  @@index([customerId])
+  @@index([status])
+  @@map("layaways")
+}
+
+model LayawayItem {
+  id         String  @id @default(cuid())
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(10, 2)
+  subtotal   Decimal @db.Decimal(10, 2)
+
+  productId  String
+
+  layawayId  String
+  layaway    Layaway @relation(fields: [layawayId], references: [id], onDelete: Cascade)
+
+  createdAt  DateTime @default(now())
+
+  @@index([layawayId])
+  @@map("layaway_items")
+}
+
+model LayawayPayment {
+  id          String   @id @default(cuid())
+  amount      Decimal  @db.Decimal(10, 2)
+  paymentMethod PaymentMethod
+
+  layawayId   String
+  layaway     Layaway  @relation(fields: [layawayId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([layawayId])
+  @@map("layaway_payments")
+}
+
+// ============================================
+// CONSIGNMENT MODELS
+// ============================================
+
+model Consignment {
+  id              String           @id @default(cuid())
+  consignmentNumber String         @unique
+  status          ConsignmentStatus @default(ACTIVE)
+  commissionRate  Decimal          @db.Decimal(5, 2)
+
+  supplierId      String
+
+  startDate       DateTime
+  endDate         DateTime?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  items           ConsignmentItem[]
+
+  @@map("consignments")
+}
+
+model ConsignmentItem {
+  id            String      @id @default(cuid())
+  quantity      Int
+  soldQuantity  Int         @default(0)
+  returnedQuantity Int      @default(0)
+  price         Decimal     @db.Decimal(10, 2)
+
+  productId     String
+
+  consignmentId String
+  consignment   Consignment @relation(fields: [consignmentId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([consignmentId])
+  @@map("consignment_items")
+}
+
+// ============================================
+// ELECTRONIC INVOICING MODELS
+// ============================================
+
+model Invoice {
+  id              String        @id @default(cuid())
+  invoiceNumber   String        @unique
+  type            InvoiceType   @default(INVOICE)
+  status          InvoiceStatus @default(DRAFT)
+
+  subtotal        Decimal       @db.Decimal(10, 2)
+  tax             Decimal       @db.Decimal(10, 2)
+  total           Decimal       @db.Decimal(10, 2)
+
+  customerId      String?
+  customerName    String
+  customerTaxId   String?
+  customerAddress String?
+
+  branchId        String
+  branch          Branch        @relation(fields: [branchId], references: [id])
+
+  saleId          String?
+
+  xmlData         String?       @db.Text
+  pdfUrl          String?
+
+  issuedAt        DateTime?
+  voidedAt        DateTime?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  items           InvoiceItem[]
+
+  @@index([branchId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  description String
+  quantity    Decimal @db.Decimal(10, 3)
+  unitPrice   Decimal @db.Decimal(10, 2)
+  subtotal    Decimal @db.Decimal(10, 2)
+  tax         Decimal @db.Decimal(10, 2)
+  total       Decimal @db.Decimal(10, 2)
+
+  productId   String?
+
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ============================================
+// HARDWARE INTEGRATION MODELS
+// ============================================
+
+model Scale {
+  id          String   @id @default(cuid())
+  name        String
+  port        String
+  baudRate    Int      @default(9600)
+  isActive    Boolean  @default(true)
+
+  branchId    String
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("scales")
+}
+
+model TemperatureLog {
+  id          String   @id @default(cuid())
+  location    String
+  temperature Decimal  @db.Decimal(5, 2)
+  humidity    Decimal? @db.Decimal(5, 2)
+  isAlert     Boolean  @default(false)
+
+  branchId    String
+
+  createdAt   DateTime @default(now())
+
+  @@index([branchId])
+  @@index([createdAt])
+  @@map("temperature_logs")
+}
+
+// ============================================
+// FRAUD DETECTION MODELS
+// ============================================
+
+model FraudAlert {
+  id          String     @id @default(cuid())
+  type        FraudType
+  severity    Priority
+  description String
+  metadata    Json?
+  status      AlertStatus @default(PENDING)
+
+  saleId      String?
+  userId      String?
+
+  createdAt   DateTime   @default(now())
+  resolvedAt  DateTime?
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("fraud_alerts")
+}
+
+// ============================================
+// PAYMENT GATEWAY INTEGRATION MODELS
+// ============================================
+
+model PaymentGatewayTransaction {
+  id                String              @id @default(cuid())
+  gateway           PaymentGateway
+  transactionId     String
+  amount            Decimal             @db.Decimal(10, 2)
+  currency          String              @default("USD")
+  status            PaymentStatus
+
+  saleId            String?
+
+  requestData       Json?
+  responseData      Json?
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([gateway])
+  @@index([status])
+  @@map("payment_gateway_transactions")
+}
+
+// ============================================
+// ADVANCED AI MODELS
+// ============================================
+
+model AIVoiceCommand {
+  id          String   @id @default(cuid())
+  audioUrl    String?
+  transcript  String
+  command     String?
+  confidence  Decimal  @db.Decimal(5, 4)
+  executed    Boolean  @default(false)
+
+  userId      String
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@map("ai_voice_commands")
+}
+
+model AIOCRDocument {
+  id          String   @id @default(cuid())
+  imageUrl    String
+  documentType String
+  extractedData Json
+  confidence  Decimal  @db.Decimal(5, 4)
+  verified    Boolean  @default(false)
+
+  userId      String
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([documentType])
+  @@map("ai_ocr_documents")
+}
+
+model AIProductRecognition {
+  id          String   @id @default(cuid())
+  imageUrl    String
+  productId   String?
+  confidence  Decimal  @db.Decimal(5, 4)
+  verified    Boolean  @default(false)
+
+  userId      String
+
+  createdAt   DateTime @default(now())
+
+  @@index([productId])
+  @@map("ai_product_recognitions")
+}
+
+// ============================================
 // ENUMS
 // ============================================
 
@@ -706,4 +1251,112 @@ enum Priority {
 enum CashRegisterStatus {
   OPEN
   CLOSED
+}
+
+enum LoyaltyTransactionType {
+  EARNED
+  REDEEMED
+  EXPIRED
+  ADJUSTED
+}
+
+enum PromotionType {
+  DISCOUNT
+  COMBO
+  BUY_X_GET_Y
+  SEASONAL
+  CLEARANCE
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum TransferStatus {
+  PENDING
+  IN_TRANSIT
+  RECEIVED
+  CANCELLED
+}
+
+enum DeliveryProvider {
+  UBER_EATS
+  RAPPI
+  PEDIDOS_YA
+  IN_HOUSE
+  OTHER
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum LayawayStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  DEFAULTED
+}
+
+enum ConsignmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum InvoiceType {
+  INVOICE
+  CREDIT_NOTE
+  DEBIT_NOTE
+  RECEIPT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOIDED
+  OVERDUE
+}
+
+enum FraudType {
+  UNUSUAL_AMOUNT
+  UNUSUAL_TIME
+  MULTIPLE_REFUNDS
+  EXCESSIVE_DISCOUNTS
+  SUSPICIOUS_PATTERN
+  DUPLICATE_TRANSACTION
+}
+
+enum AlertStatus {
+  PENDING
+  REVIEWED
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+enum PaymentGateway {
+  STRIPE
+  PAYPAL
+  MERCADO_PAGO
+  TRANSBANK
+  WEBPAY
+  FLOW
+  KUSHKI
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
 }
