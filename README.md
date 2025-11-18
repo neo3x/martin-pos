@@ -16,6 +16,22 @@ Sistema completo de Punto de Venta multi-módulo con asistencia de Inteligencia 
 - ✅ Impresión térmica (tickets 80mm)
 - ✅ Impresión de etiquetas con precios
 
+### 🚀 Extended Features (NEW!)
+- 🎁 **Sistema de Fidelización** - Puntos de lealtad y descuentos personalizados por IA
+- 👥 **Control de Empleados** - Turnos, comisiones, métricas de desempeño
+- 🏢 **Multi-Sucursal Avanzado** - Transferencias de inventario con tracking completo
+- 📄 **Facturación Electrónica** - Facturas, notas de crédito/débito
+- 🚚 **Sistema de Delivery** - Integración Uber Eats, Rappi, Pedidos Ya
+- 💰 **Apartados/Layaway** - Sistema de pagos parciales
+- 🎉 **Promociones y Combos** - 2x1, descuentos, combos configurables
+- 🧠 **IA Avanzada** - OCR facturas, comandos de voz, reconocimiento de productos
+- 🔒 **Detección de Fraudes** - Alertas automáticas de transacciones sospechosas
+- 📦 **Consignaciones** - Control de productos en consignación
+- 💳 **Pasarelas de Pago** - Mercado Pago, Stripe, PayPal, Transbank
+- ⚙️ **Hardware Integration** - Balanzas electrónicas, sensores de temperatura
+
+> **Ver todas las funcionalidades extendidas en [EXTENDED_FEATURES.md](EXTENDED_FEATURES.md)**
+
 ### Asistencia por IA
 - 🤖 Análisis predictivo de inventario
 - 🤖 Alertas inteligentes de restock
@@ -24,6 +40,9 @@ Sistema completo de Punto de Venta multi-módulo con asistencia de Inteligencia 
 - 🤖 Sugerencias de compra
 - 🤖 Reportes automáticos con insights
 - 🤖 Asistente por voz para consultas
+- 🤖 **OCR** - Lectura automática de facturas de proveedores
+- 🤖 **Visión** - Reconocimiento de productos por imagen
+- 🤖 **Voz** - Procesamiento de comandos de voz
 
 ### Métodos de Entrada
 - 🎤 **Voz** - Comandos y consultas por voz
@@ -119,17 +138,21 @@ pnpm desktop:dev   # Electron
 - PostgreSQL + Prisma ORM
 - Redis (Cache)
 - Socket.io (Real-time)
+- 21 módulos backend
+- 120+ endpoints API
 
 **Frontend Web:**
 - Next.js 14 (App Router)
 - React 18 + TypeScript
 - TailwindCSS + shadcn/ui
 - Zustand (State)
+- React Query
 
 **Mobile:**
 - React Native + Expo
 - TypeScript
 - Expo Router
+- Expo Camera/Barcode Scanner
 
 **Desktop:**
 - Electron
@@ -137,26 +160,36 @@ pnpm desktop:dev   # Electron
 - node-thermal-printer
 
 **IA:**
-- Anthropic Claude API
-- OpenAI GPT-4 (opcional)
-- LangChain
-- Whisper (voz)
+- Anthropic Claude API (Sonnet 4.5)
+- OpenAI GPT-4 Vision (OCR)
+- Whisper (Speech-to-Text)
+
+**Base de Datos:**
+- 45+ modelos Prisma
+- PostgreSQL 15
+- Redis para cache
 
 ## 📱 Deployment
 
-### Local
-```bash
-pnpm build
-pnpm start
-```
-
-### Docker
+### Quick Start con Docker (Recomendado para Demo)
 ```bash
 docker-compose up -d
+docker-compose exec backend npx prisma migrate deploy
+docker-compose exec backend npx prisma db seed
 ```
 
-### Cloud (Railway/Vercel)
-Ver documentación en `/docs/deployment.md`
+**Ver [DEMO.md](DEMO.md) para guía completa de demostración.**
+
+### Deployment en Cloud
+
+**Plataformas Soportadas:**
+- ✅ **Railway** (Recomendado) - Deploy en 10 minutos
+- ✅ **Render** - Tier gratuito disponible
+- ✅ **AWS** - Producción enterprise
+- ✅ **Google Cloud** - IA/ML optimizado
+- ✅ **DigitalOcean** - Costo predecible
+
+**Ver [DEPLOYMENT.md](DEPLOYMENT.md) para instrucciones detalladas de cada plataforma.**
 
 ## 🔐 Seguridad
 
@@ -166,6 +199,41 @@ Ver documentación en `/docs/deployment.md`
 - Rate limiting
 - CORS configurado
 - 2FA opcional
+
+## 📚 Documentación
+
+- **[DEMO.md](DEMO.md)** - Guía completa para ejecutar demo (5-30 minutos)
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Instrucciones de despliegue en cloud
+- **[EXTENDED_FEATURES.md](EXTENDED_FEATURES.md)** - Documentación de todas las funcionalidades extendidas
+- **[.env.example](.env.example)** - Ejemplo de variables de entorno
+
+## 📊 Métricas del Proyecto
+
+- **45+ modelos** de base de datos
+- **21 módulos** backend completos
+- **120+ endpoints** API REST
+- **12 categorías** de funcionalidades extendidas
+- **3 módulos** especializados (Restaurante, Librería, Minimarket)
+- **4 plataformas** (Web, Mobile, Desktop, API)
+
+## 🎯 Casos de Uso
+
+### Restaurantes
+- Control de mesas y comandas
+- Integración con delivery (Uber Eats, Rappi)
+- División de cuentas
+- Propinas
+
+### Librerías/Bazares
+- Consignaciones
+- Apartados/Layaway
+- Productos variados
+
+### Minimarkets
+- Productos perecederos con alertas
+- Balanzas electrónicas
+- Control de temperatura
+- Gestión de lotes y vencimientos
 
 ## 📄 Licencia
 
@@ -178,3 +246,7 @@ Ver `CONTRIBUTING.md`
 ## 📞 Soporte
 
 Para issues y sugerencias: [GitHub Issues](https://github.com/tu-repo/issues)
+
+---
+
+**Desarrollado con ❤️ para transformar la gestión de negocios en Chile**

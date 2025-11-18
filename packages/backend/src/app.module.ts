@@ -30,6 +30,9 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AdvancedAIModule } from './modules/advanced-ai/advanced-ai.module';
 import { FraudDetectionModule } from './modules/fraud-detection/fraud-detection.module';
 
+// Health check
+import { HealthController } from './health.controller';
+
 @Module({
   imports: [
     // Configuration
@@ -72,5 +75,6 @@ import { FraudDetectionModule } from './modules/fraud-detection/fraud-detection.
     AdvancedAIModule,
     FraudDetectionModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: martin-pos-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-martin_pos}
+      POSTGRES_USER: ${POSTGRES_USER:-martinpos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - martin-pos-network
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-martinpos}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: martin-pos-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - martin-pos-network
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: martin-pos-api
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-martinpos}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-martin_pos}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      APP_PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - martin-pos-network
+    volumes:
+      - ./uploads:/app/uploads
+    restart: always
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3001/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Web Frontend
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: martin-pos-web
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
+    depends_on:
+      - backend
+    networks:
+      - martin-pos-network
+    restart: always
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: martin-pos-nginx
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - web
+      - backend
+    networks:
+      - martin-pos-network
+    restart: always
+
+networks:
+  martin-pos-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local

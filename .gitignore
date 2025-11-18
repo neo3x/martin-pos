@@ -40,9 +40,15 @@ lerna-debug.log*
 *.db
 *.db-journal
 
-# Prisma
-prisma/migrations/*
-!prisma/migrations/.gitkeep
+# Uploads (user-generated content)
+uploads/
+*.log
+
+# SSL Certificates
+ssl/
+*.key
+*.crt
+*.pem
 
 # Expo
 .expo

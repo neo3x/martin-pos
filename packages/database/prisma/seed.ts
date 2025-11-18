@@ -210,7 +210,450 @@ async function main() {
     console.log('✅ Tables created:', tables.length);
   }
 
+  // ============ EXTENDED FEATURES DEMO DATA ============
+
+  // 1. Loyalty Program
+  const loyaltyProgram = await prisma.loyaltyProgram.create({
+    data: {
+      name: 'Programa VIP Martin POS',
+      description: 'Gana puntos por cada compra',
+      pointsPerDollar: 10,
+      dollarPerPoint: 0.01,
+      minPointsToRedeem: 100,
+      isActive: true,
+      branchId: branch.id,
+    },
+  });
+
+  // Add loyalty points to customer
+  await prisma.loyaltyTransaction.create({
+    data: {
+      customerId: customer.id,
+      programId: loyaltyProgram.id,
+      points: 500,
+      type: 'EARNED',
+      description: 'Bono de bienvenida',
+      balanceAfter: 500,
+    },
+  });
+
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { loyaltyPoints: 500 },
+  });
+
+  console.log('✅ Loyalty program created');
+
+  // 2. Employees with shifts and commissions
+  const cashier = await prisma.user.create({
+    data: {
+      email: 'cajero@martinpos.com',
+      password: hashedPassword,
+      firstName: 'Juan',
+      lastName: 'Pérez',
+      role: UserRole.CASHIER,
+      isActive: true,
+      branchId: branch.id,
+    },
+  });
+
+  const shift = await prisma.employeeShift.create({
+    data: {
+      userId: cashier.id,
+      startTime: new Date(Date.now() - 8 * 60 * 60 * 1000), // 8 hours ago
+      endTime: new Date(),
+      hoursWorked: 8,
+    },
+  });
+
+  console.log('✅ Employees and shifts created');
+
+  // 3. Second branch for transfers
+  const secondBranch = await prisma.branch.create({
+    data: {
+      name: 'Sucursal Norte',
+      address: 'Av. Norte 456',
+      phone: '+56923456789',
+      email: 'norte@martinpos.com',
+      moduleType: ModuleType.ALL,
+      isActive: true,
+      config: {
+        currency: 'CLP',
+        timezone: 'America/Santiago',
+        taxRate: 0.19,
+      },
+    },
+  });
+
+  // Create transfer between branches
+  const transfer = await prisma.inventoryTransfer.create({
+    data: {
+      transferNumber: 'TRF-000001',
+      status: 'PENDING',
+      fromBranchId: branch.id,
+      toBranchId: secondBranch.id,
+      createdById: admin.id,
+      notes: 'Transferencia inicial de productos',
+      items: {
+        create: [
+          {
+            productId: products[0].id,
+            quantity: 10,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log('✅ Branches and transfers created');
+
+  // 4. Promotions
+  const promotion = await prisma.promotion.create({
+    data: {
+      name: '2x1 en Bebidas',
+      description: 'Compra 2 bebidas y paga 1',
+      type: 'BUY_X_GET_Y',
+      discountType: 'PERCENTAGE',
+      discountValue: 50,
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      isActive: true,
+      branchId: branch.id,
+      conditions: {
+        minQuantity: 2,
+        applicableCategories: [categories[2].id],
+      },
+    },
+  });
+
+  const combo = await prisma.promotion.create({
+    data: {
+      name: 'Combo Desayuno',
+      description: 'Leche + Pan a precio especial',
+      type: 'COMBO',
+      discountType: 'FIXED',
+      discountValue: 500,
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
+      isActive: true,
+      branchId: branch.id,
+      comboProducts: {
+        create: [
+          {
+            productId: products[3].id, // Leche
+            quantity: 1,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log('✅ Promotions created');
+
+  // 5. Sample sale with invoice
+  const sale = await prisma.sale.create({
+    data: {
+      saleNumber: 'VTA-000001',
+      subtotal: 3300,
+      tax: 627,
+      discount: 0,
+      total: 3927,
+      status: 'COMPLETED',
+      paymentMethod: 'CASH',
+      branchId: branch.id,
+      userId: cashier.id,
+      customerId: customer.id,
+      items: {
+        create: [
+          {
+            productId: products[0].id,
+            quantity: 1,
+            price: 1500,
+            subtotal: 1500,
+            tax: 285,
+            total: 1785,
+          },
+          {
+            productId: products[2].id,
+            quantity: 1,
+            price: 1800,
+            subtotal: 1800,
+            tax: 342,
+            total: 2142,
+          },
+        ],
+      },
+    },
+  });
+
+  // Create invoice for the sale
+  const invoice = await prisma.invoice.create({
+    data: {
+      invoiceNumber: 'FAC-000001',
+      type: 'INVOICE',
+      status: 'ISSUED',
+      issuedAt: new Date(),
+      saleId: sale.id,
+      customerId: customer.id,
+      branchId: branch.id,
+      subtotal: 3300,
+      tax: 627,
+      total: 3927,
+      items: {
+        create: [
+          {
+            description: 'Arroz Grado 1 - 1kg',
+            quantity: 1,
+            unitPrice: 1500,
+            subtotal: 1500,
+            tax: 285,
+            total: 1785,
+          },
+          {
+            description: 'Coca Cola 1.5L',
+            quantity: 1,
+            unitPrice: 1800,
+            subtotal: 1800,
+            tax: 342,
+            total: 2142,
+          },
+        ],
+      },
+    },
+  });
+
+  // Create commission for the sale
+  await prisma.commission.create({
+    data: {
+      userId: cashier.id,
+      saleId: sale.id,
+      baseSaleAmount: 3927,
+      percentage: 3,
+      amount: 117.81,
+      status: 'PENDING',
+    },
+  });
+
+  console.log('✅ Sale and invoice created');
+
+  // 6. Layaway (Apartado)
+  const layaway = await prisma.layaway.create({
+    data: {
+      layawayNumber: 'APT-000001',
+      customerId: customer.id,
+      branchId: branch.id,
+      totalAmount: 5000,
+      paidAmount: 2000,
+      remainingAmount: 3000,
+      status: 'ACTIVE',
+      dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days
+      items: {
+        create: [
+          {
+            productId: products[0].id,
+            quantity: 3,
+            price: 1500,
+            subtotal: 4500,
+          },
+        ],
+      },
+      payments: {
+        create: [
+          {
+            amount: 2000,
+            paymentMethod: 'CASH',
+            userId: cashier.id,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log('✅ Layaway created');
+
+  // 7. Delivery Order
+  const deliveryOrder = await prisma.deliveryOrder.create({
+    data: {
+      saleId: sale.id,
+      provider: 'UBER_EATS',
+      status: 'PENDING',
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      deliveryAddress: 'Calle Ejemplo 789, Depto 12',
+      deliveryFee: 2500,
+      estimatedDeliveryTime: new Date(Date.now() + 45 * 60 * 1000), // 45 minutes
+    },
+  });
+
+  console.log('✅ Delivery order created');
+
+  // 8. Fraud Alert (demo)
+  const fraudAlert = await prisma.fraudAlert.create({
+    data: {
+      type: 'UNUSUAL_AMOUNT',
+      severity: 'MEDIUM',
+      description: 'Venta con monto inusualmente alto detectada',
+      saleId: sale.id,
+      status: 'PENDING',
+      detectedAt: new Date(),
+    },
+  });
+
+  console.log('✅ Fraud alert created');
+
+  // 9. AI Records
+  const ocrDoc = await prisma.aIOCRDocument.create({
+    data: {
+      imageUrl: 'https://example.com/invoice.jpg',
+      documentType: 'SUPPLIER_INVOICE',
+      extractedData: {
+        supplier: 'Proveedor Demo',
+        total: 50000,
+        items: [
+          { name: 'Producto 1', quantity: 10, price: 5000 },
+        ],
+      },
+      confidence: 0.95,
+      userId: admin.id,
+      verified: false,
+    },
+  });
+
+  const voiceCommand = await prisma.aIVoiceCommand.create({
+    data: {
+      transcript: 'Agregar dos coca colas a la venta',
+      intent: 'ADD_TO_SALE',
+      entities: {
+        product: 'coca cola',
+        quantity: 2,
+      },
+      confidence: 0.92,
+      userId: cashier.id,
+      executed: true,
+    },
+  });
+
+  const productRecog = await prisma.aIProductRecognition.create({
+    data: {
+      imageUrl: 'https://example.com/product.jpg',
+      recognizedProductId: products[2].id,
+      confidence: 0.88,
+      userId: cashier.id,
+      verified: true,
+    },
+  });
+
+  console.log('✅ AI records created');
+
+  // 10. Consignment
+  const consignment = await prisma.consignment.create({
+    data: {
+      consignmentNumber: 'CONS-000001',
+      supplierName: 'Artesanías Don José',
+      supplierContact: '+56911223344',
+      commissionRate: 20,
+      status: 'ACTIVE',
+      branchId: branch.id,
+      items: {
+        create: [
+          {
+            productId: products[0].id,
+            quantity: 5,
+            quantitySold: 2,
+            unitPrice: 1500,
+          },
+        ],
+      },
+    },
+  });
+
+  console.log('✅ Consignment created');
+
+  // 11. Payment Gateway Transaction
+  const gatewayTx = await prisma.paymentGatewayTransaction.create({
+    data: {
+      saleId: sale.id,
+      gateway: 'MERCADO_PAGO',
+      transactionId: 'MP-123456789',
+      amount: 3927,
+      currency: 'CLP',
+      status: 'APPROVED',
+      paymentMethod: 'CREDIT_CARD',
+      response: {
+        status: 'approved',
+        status_detail: 'accredited',
+      },
+    },
+  });
+
+  console.log('✅ Payment gateway transaction created');
+
+  // 12. Hardware Integration
+  const scale = await prisma.scale.create({
+    data: {
+      name: 'Balanza Principal',
+      brand: 'Systel',
+      model: 'Croma',
+      serialPort: '/dev/ttyUSB0',
+      baudRate: 9600,
+      isActive: true,
+      branchId: branch.id,
+    },
+  });
+
+  const tempLog = await prisma.temperatureLog.create({
+    data: {
+      productId: products[1].id, // Manzanas
+      temperature: 4.5,
+      humidity: 65,
+      location: 'Cámara frigorífica principal',
+      branchId: branch.id,
+    },
+  });
+
+  console.log('✅ Hardware records created');
+
+  // 13. Customer preferences (AI learning)
+  await prisma.customerPreference.create({
+    data: {
+      customerId: customer.id,
+      productId: products[2].id, // Coca Cola
+      frequency: 15,
+      lastPurchase: new Date(),
+      averageQuantity: 2,
+      preferredDayOfWeek: 5, // Friday
+      preferredTimeOfDay: 18, // 6 PM
+    },
+  });
+
+  console.log('✅ Customer preferences created');
+
+  console.log('');
   console.log('🎉 Seed completed successfully!');
+  console.log('');
+  console.log('📊 DEMO DATA SUMMARY:');
+  console.log('  - 2 Branches (Principal + Norte)');
+  console.log('  - 2 Users (Admin + Cajero)');
+  console.log('  - 4 Categories');
+  console.log('  - 4 Products');
+  console.log('  - 1 Customer with loyalty points');
+  console.log('  - 1 Loyalty Program');
+  console.log('  - 1 Employee shift');
+  console.log('  - 1 Inventory transfer');
+  console.log('  - 2 Promotions (2x1 + Combo)');
+  console.log('  - 1 Sale with invoice');
+  console.log('  - 1 Layaway/Apartado');
+  console.log('  - 1 Delivery order');
+  console.log('  - 1 Fraud alert');
+  console.log('  - 3 AI records (OCR, Voice, Recognition)');
+  console.log('  - 1 Consignment');
+  console.log('  - 1 Payment gateway transaction');
+  console.log('  - 1 Scale + 1 Temperature log');
+  console.log('');
+  console.log('🔐 LOGIN CREDENTIALS:');
+  console.log('  Admin:   admin@martinpos.com / admin123');
+  console.log('  Cashier: cajero@martinpos.com / admin123');
+  console.log('');
 }
 
 main()
