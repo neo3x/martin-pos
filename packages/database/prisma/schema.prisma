@@ -1141,6 +1141,416 @@ model AIProductRecognition {
 }
 
 // ============================================
+// BOTILLERIA (LIQUOR STORE) MODELS
+// ============================================
+
+model AlcoholicProduct {
+  id                  String              @id @default(cuid())
+  productId           String              @unique
+  alcoholContent      Decimal             @db.Decimal(5, 2)  // % alcohol
+  vintage             Int?                // Añada
+  origin              String?             // País/región
+  winery              String?             // Bodega
+  grapeVariety        String?             // Cepa
+  servingTemperature  String?             // Temperatura sugerida
+  pairings            String?             // Maridajes
+  tastingNotes        String?             @db.Text
+  rating              Decimal?            @db.Decimal(3, 1)  // Puntuación
+  category            AlcoholCategory
+  taxCategory         AlcoholTaxCategory  @default(STANDARD)
+
+  volume              Int?                // ml
+  container           ContainerType       @default(BOTTLE)
+  isReturnable        Boolean             @default(false)
+  depositAmount       Decimal?            @db.Decimal(10, 2)  // Valor envase
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([category])
+  @@index([taxCategory])
+  @@map("alcoholic_products")
+}
+
+model AgeVerification {
+  id                  String              @id @default(cuid())
+  saleId              String
+  customerRut         String?
+  customerBirthDate   DateTime?
+  verificationMethod  VerificationMethod
+  verifiedBy          String              // userId
+  isApproved          Boolean             @default(true)
+  notes               String?
+
+  createdAt           DateTime            @default(now())
+
+  @@index([saleId])
+  @@map("age_verifications")
+}
+
+model ReturnableContainer {
+  id                  String    @id @default(cuid())
+  productId           String
+  containerType       String
+  depositAmount       Decimal   @db.Decimal(10, 2)
+  totalIssued         Int       @default(0)
+  totalReturned       Int       @default(0)
+  pendingQuantity     Int       @default(0)
+
+  branchId            String
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  returns             ContainerReturn[]
+
+  @@index([productId])
+  @@index([branchId])
+  @@map("returnable_containers")
+}
+
+model ContainerReturn {
+  id                  String              @id @default(cuid())
+  containerId         String
+  container           ReturnableContainer @relation(fields: [containerId], references: [id])
+  quantity            Int
+  refundAmount        Decimal             @db.Decimal(10, 2)
+  customerId          String?
+
+  processedBy         String              // userId
+
+  createdAt           DateTime            @default(now())
+
+  @@index([containerId])
+  @@map("container_returns")
+}
+
+model TastingEvent {
+  id                  String              @id @default(cuid())
+  name                String
+  description         String?             @db.Text
+  eventDate           DateTime
+  capacity            Int
+  pricePerPerson      Decimal             @db.Decimal(10, 2)
+  status              EventStatus         @default(SCHEDULED)
+
+  branchId            String
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relations
+  products            TastingEventProduct[]
+  attendees           TastingEventAttendee[]
+
+  @@index([branchId])
+  @@index([eventDate])
+  @@map("tasting_events")
+}
+
+model TastingEventProduct {
+  id                  String        @id @default(cuid())
+  eventId             String
+  event               TastingEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  productId           String
+  servingSize         String?       // e.g., "50ml"
+  notes               String?
+
+  createdAt           DateTime      @default(now())
+
+  @@index([eventId])
+  @@map("tasting_event_products")
+}
+
+model TastingEventAttendee {
+  id                  String        @id @default(cuid())
+  eventId             String
+  event               TastingEvent  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  customerId          String?
+  name                String
+  email               String?
+  phone               String?
+  isPaid              Boolean       @default(false)
+  attendedAt          DateTime?
+
+  createdAt           DateTime      @default(now())
+
+  @@index([eventId])
+  @@map("tasting_event_attendees")
+}
+
+model WineClubSubscription {
+  id                  String              @id @default(cuid())
+  customerId          String
+  planType            WineClubPlan
+  status              SubscriptionStatus  @default(ACTIVE)
+  monthlyAmount       Decimal             @db.Decimal(10, 2)
+  bottlesPerMonth     Int                 @default(2)
+  preferredCategories String?             // JSON array of preferences
+
+  startDate           DateTime            @default(now())
+  nextDeliveryDate    DateTime
+  cancelledAt         DateTime?
+
+  branchId            String
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  // Relations
+  deliveries          WineClubDelivery[]
+
+  @@index([customerId])
+  @@index([branchId])
+  @@index([status])
+  @@map("wine_club_subscriptions")
+}
+
+model WineClubDelivery {
+  id                  String                @id @default(cuid())
+  subscriptionId      String
+  subscription        WineClubSubscription  @relation(fields: [subscriptionId], references: [id])
+  deliveryDate        DateTime
+  status              DeliveryStatus        @default(PENDING)
+  products            Json                  // Array of productIds and quantities
+  trackingNumber      String?
+  notes               String?
+
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([subscriptionId])
+  @@map("wine_club_deliveries")
+}
+
+model SaleHoursRestriction {
+  id                  String    @id @default(cuid())
+  dayOfWeek           Int       // 0=Sunday, 6=Saturday
+  openTime            String    // HH:mm format
+  closeTime           String    // HH:mm format
+  isEnabled           Boolean   @default(true)
+
+  branchId            String
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([branchId, dayOfWeek])
+  @@map("sale_hours_restrictions")
+}
+
+// ============================================
+// TRANSBANK INTEGRATION MODELS
+// ============================================
+
+model TransbankTransaction {
+  id                  String              @id @default(cuid())
+  saleId              String?
+  buyOrder            String              @unique
+  sessionId           String
+  amount              Int                 // Transbank usa enteros
+  status              TransbankStatus     @default(INITIALIZED)
+
+  // Webpay Plus
+  token               String?             @unique
+  responseCode        Int?
+  authorizationCode   String?
+  cardNumber          String?             // Últimos 4 dígitos
+  cardType            String?             // VISA, MASTERCARD, etc.
+  installmentsNumber  Int?
+  installmentsAmount  Int?
+
+  // Oneclick
+  tbkUser             String?
+  tbkAuthCode         String?
+
+  returnUrl           String?
+  finalUrl            String?
+
+  errorMessage        String?
+  rawResponse         Json?
+
+  environment         String              @default("integration") // integration | production
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  completedAt         DateTime?
+
+  @@index([saleId])
+  @@index([buyOrder])
+  @@index([status])
+  @@map("transbank_transactions")
+}
+
+model TransbankConfig {
+  id                  String    @id @default(cuid())
+  branchId            String    @unique
+  environment         String    @default("integration")
+  commerceCode        String
+  apiKey              String
+  isWebpayEnabled     Boolean   @default(true)
+  isOneclickEnabled   Boolean   @default(false)
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("transbank_configs")
+}
+
+// ============================================
+// SII ELECTRONIC INVOICING MODELS (CHILE)
+// ============================================
+
+model SIIConfig {
+  id                  String    @id @default(cuid())
+  branchId            String    @unique
+  rutEmisor           String    // RUT de la empresa
+  razonSocial         String    // Razón social
+  giroEmisor          String    // Giro comercial
+  direccionOrigen     String
+  comunaOrigen        String
+  ciudadOrigen        String
+
+  // Certificado digital
+  certificatePath     String?
+  certificatePassword String?
+
+  // CAF (Código de Autorización de Folios)
+  cafBoletaPath       String?
+  cafFacturaPath      String?
+  cafNotaCreditoPath  String?
+
+  // Folios disponibles
+  folioBoletaInicio   Int?
+  folioBoletaActual   Int?
+  folioBoletaFin      Int?
+  folioFacturaInicio  Int?
+  folioFacturaActual  Int?
+  folioFacturaFin     Int?
+
+  environment         String    @default("certificacion") // certificacion | produccion
+  isActive            Boolean   @default(true)
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@map("sii_configs")
+}
+
+model DTEDocument {
+  id                  String        @id @default(cuid())
+  branchId            String
+  saleId              String?
+
+  // Tipo de documento (33=Factura, 39=Boleta, 61=Nota Crédito)
+  tipoDTE             Int
+  folio               Int
+
+  // Datos emisor
+  rutEmisor           String
+  razonSocialEmisor   String
+
+  // Datos receptor
+  rutReceptor         String?
+  razonSocialReceptor String?
+  giroReceptor        String?
+  direccionReceptor   String?
+  comunaReceptor      String?
+
+  // Montos
+  montoNeto           Int
+  montoExento         Int           @default(0)
+  tasaIVA             Int           @default(19)
+  iva                 Int
+  montoTotal          Int
+
+  // Impuestos adicionales (ILA para alcohol)
+  tipoImpAdicional    Int?          // Código impuesto adicional
+  tasaImpAdicional    Decimal?      @db.Decimal(5, 2)
+  montoImpAdicional   Int?
+
+  // Estado SII
+  status              DTEStatus     @default(DRAFT)
+  trackId             String?       // ID de seguimiento SII
+  estadoSII           String?       // Estado devuelto por SII
+  glosaEstadoSII      String?       // Descripción estado
+
+  // XML y PDF
+  xmlContent          String?       @db.Text
+  xmlSigned           String?       @db.Text
+  pdfUrl              String?
+  tedBarcode          String?       @db.Text  // Código de barras TED
+
+  // Fechas
+  fechaEmision        DateTime      @default(now())
+  fechaVencimiento    DateTime?
+
+  // Referencias (para notas de crédito)
+  referenciaTipoDTE   Int?
+  referenciaFolio     Int?
+  referenciaRazon     String?
+
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  sentToSIIAt         DateTime?
+  acceptedBySIIAt     DateTime?
+
+  // Relations
+  items               DTEItem[]
+
+  @@unique([branchId, tipoDTE, folio])
+  @@index([branchId])
+  @@index([rutReceptor])
+  @@index([status])
+  @@index([fechaEmision])
+  @@map("dte_documents")
+}
+
+model DTEItem {
+  id                  String      @id @default(cuid())
+  dteId               String
+  dte                 DTEDocument @relation(fields: [dteId], references: [id], onDelete: Cascade)
+
+  numeroLinea         Int
+  indicadorExento     Boolean     @default(false)
+  nombreItem          String
+  descripcion         String?
+  cantidad            Decimal     @db.Decimal(10, 3)
+  unidadMedida        String?
+  precioUnitario      Int
+  montoItem           Int
+  descuentoPct        Decimal?    @db.Decimal(5, 2)
+  descuentoMonto      Int?
+
+  // Impuesto adicional por item
+  codigoImpAdicional  Int?
+  tasaImpAdicional    Decimal?    @db.Decimal(5, 2)
+  montoImpAdicional   Int?
+
+  productId           String?
+
+  createdAt           DateTime    @default(now())
+
+  @@index([dteId])
+  @@map("dte_items")
+}
+
+model DTELog {
+  id                  String    @id @default(cuid())
+  dteId               String
+  action              String    // CREATED, SIGNED, SENT, ACCEPTED, REJECTED, etc.
+  status              String
+  message             String?   @db.Text
+  rawData             Json?
+
+  createdAt           DateTime  @default(now())
+
+  @@index([dteId])
+  @@map("dte_logs")
+}
+
+// ============================================
 // ENUMS
 // ============================================
 
@@ -1158,6 +1568,7 @@ enum ModuleType {
   RESTAURANT
   BOOKSTORE
   MINIMARKET
+  BOTILLERIA
   ALL
 }
 
@@ -1359,4 +1770,108 @@ enum PaymentStatus {
   FAILED
   REFUNDED
   PARTIALLY_REFUNDED
+}
+
+// ============================================
+// BOTILLERIA ENUMS
+// ============================================
+
+enum AlcoholCategory {
+  WINE_RED
+  WINE_WHITE
+  WINE_ROSE
+  WINE_SPARKLING
+  BEER_LAGER
+  BEER_ALE
+  BEER_CRAFT
+  SPIRITS_WHISKY
+  SPIRITS_VODKA
+  SPIRITS_GIN
+  SPIRITS_RUM
+  SPIRITS_TEQUILA
+  SPIRITS_PISCO
+  SPIRITS_BRANDY
+  LIQUEUR
+  APERITIF
+  VERMOUTH
+  CIDER
+  NON_ALCOHOLIC
+  OTHER
+}
+
+enum AlcoholTaxCategory {
+  STANDARD           // 20.5% ILA (vinos, cervezas)
+  HIGH               // 31.5% ILA (destilados)
+  EXEMPT             // Exento (sin alcohol)
+}
+
+enum ContainerType {
+  BOTTLE
+  CAN
+  BOX
+  KEG
+  BAG_IN_BOX
+  TETRA
+  OTHER
+}
+
+enum VerificationMethod {
+  RUT
+  ID_CARD
+  PASSPORT
+  VERBAL_CONFIRMATION
+  SYSTEM_REGISTERED
+}
+
+enum EventStatus {
+  SCHEDULED
+  OPEN_REGISTRATION
+  FULL
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum WineClubPlan {
+  BASIC
+  STANDARD
+  PREMIUM
+  VIP
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+// ============================================
+// TRANSBANK ENUMS
+// ============================================
+
+enum TransbankStatus {
+  INITIALIZED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REVERSED
+  NULLIFIED
+  TIMEOUT
+  ERROR
+}
+
+// ============================================
+// SII DTE ENUMS
+// ============================================
+
+enum DTEStatus {
+  DRAFT
+  SIGNED
+  SENT
+  ACCEPTED
+  ACCEPTED_WITH_OBJECTIONS
+  REJECTED
+  VOIDED
+  ERROR
 }

@@ -4,6 +4,7 @@ Sistema completo de Punto de Venta multi-módulo con asistencia de Inteligencia 
 - 🍽️ **Restaurantes**
 - 📚 **Librerías y Bazares**
 - 🛒 **Minimarkets**
+- 🍷 **Botillerías** (NEW!)
 
 ## 🌟 Características Principales
 
@@ -29,6 +30,9 @@ Sistema completo de Punto de Venta multi-módulo con asistencia de Inteligencia 
 - 📦 **Consignaciones** - Control de productos en consignación
 - 💳 **Pasarelas de Pago** - Mercado Pago, Stripe, PayPal, Transbank
 - ⚙️ **Hardware Integration** - Balanzas electrónicas, sensores de temperatura
+- 🍷 **Módulo Botillería** - Control de alcoholes, verificación de edad, ILA, catas, club de vinos
+- 💳 **Transbank Webpay** - Integración completa con pagos Transbank Chile
+- 📄 **SII Facturación Electrónica** - Boletas, facturas, notas de crédito con integración SII
 
 > **Ver todas las funcionalidades extendidas en [EXTENDED_FEATURES.md](EXTENDED_FEATURES.md)**
 
@@ -209,12 +213,14 @@ docker-compose exec backend npx prisma db seed
 
 ## 📊 Métricas del Proyecto
 
-- **45+ modelos** de base de datos
-- **21 módulos** backend completos
-- **120+ endpoints** API REST
-- **12 categorías** de funcionalidades extendidas
-- **3 módulos** especializados (Restaurante, Librería, Minimarket)
+- **65+ modelos** de base de datos
+- **24 módulos** backend completos
+- **150+ endpoints** API REST
+- **15 categorías** de funcionalidades extendidas
+- **4 módulos** especializados (Restaurante, Librería, Minimarket, Botillería)
 - **4 plataformas** (Web, Mobile, Desktop, API)
+- **Transbank** integrado para pagos en Chile
+- **SII** integrado para facturación electrónica
 
 ## 🎯 Casos de Uso
 
@@ -234,6 +240,22 @@ docker-compose exec backend npx prisma db seed
 - Balanzas electrónicas
 - Control de temperatura
 - Gestión de lotes y vencimientos
+
+### Botillerías
+- Gestión de vinos, cervezas y licores
+- Verificación de edad obligatoria
+- Cálculo automático de ILA (Impuesto al Alcohol)
+- Control de horarios de venta
+- Eventos de cata
+- Club de vinos con suscripciones
+
+### Pagos y Facturación (Chile)
+- **Transbank Webpay Plus** - Pagos con tarjetas
+- **SII Boleta Electrónica** - Tipo 39
+- **SII Factura Electrónica** - Tipo 33
+- **Notas de Crédito** - Tipo 61
+- Validación de RUT
+- Generación de XML según normativa SII
 
 ## 📄 Licencia
 

@@ -628,14 +628,319 @@ async function main() {
 
   console.log('✅ Customer preferences created');
 
+  // ============ BOTILLERÍA MODULE DEMO DATA ============
+
+  // Create Botillería branch
+  const botilleriaBranch = await prisma.branch.create({
+    data: {
+      name: 'Botillería Don Vino',
+      address: 'Av. Providencia 1234',
+      phone: '+56934567890',
+      email: 'botilleria@martinpos.com',
+      moduleType: 'BOTILLERIA' as any,
+      isActive: true,
+      config: {
+        currency: 'CLP',
+        timezone: 'America/Santiago',
+        taxRate: 0.19,
+        alcoholSalesRestriction: true,
+      },
+    },
+  });
+
+  // Create Botillería category
+  const botilleriaCategory = await prisma.category.create({
+    data: {
+      name: 'Vinos Tintos',
+      description: 'Vinos tintos de distintas cepas',
+      icon: '🍷',
+      color: '#722F37',
+      branchId: botilleriaBranch.id,
+    },
+  });
+
+  // Create wine product
+  const wineProduct = await prisma.product.create({
+    data: {
+      sku: 'VIN-000001',
+      barcode: '7800999888777',
+      name: 'Casillero del Diablo Cabernet Sauvignon',
+      description: 'Vino tinto chileno de Concha y Toro',
+      price: 6990,
+      costPrice: 4500,
+      stock: 24,
+      minStock: 6,
+      maxStock: 48,
+      unit: 'UN',
+      categoryId: botilleriaCategory.id,
+      branchId: botilleriaBranch.id,
+      isPerishable: false,
+      taxable: true,
+      taxRate: 0.19,
+    },
+  });
+
+  // Create alcoholic product details
+  await prisma.alcoholicProduct.create({
+    data: {
+      productId: wineProduct.id,
+      alcoholContent: 13.5,
+      category: 'WINE_RED',
+      vintage: 2022,
+      origin: 'Chile - Valle Central',
+      winery: 'Concha y Toro',
+      grapeVariety: 'Cabernet Sauvignon',
+      servingTemperature: '16-18°C',
+      pairings: 'Carnes rojas, pastas, quesos maduros',
+      tastingNotes: 'Color rubí intenso, aromas a frutos rojos y notas de vainilla',
+      rating: 4.2,
+      taxCategory: 'STANDARD',
+      volume: 750,
+      container: 'BOTTLE',
+      isReturnable: true,
+      depositAmount: 500,
+    },
+  });
+
+  // Create beer product
+  const beerProduct = await prisma.product.create({
+    data: {
+      sku: 'CER-000001',
+      barcode: '7800111222333',
+      name: 'Kunstmann Lager',
+      description: 'Cerveza artesanal tipo Lager',
+      price: 1990,
+      costPrice: 1200,
+      stock: 48,
+      minStock: 12,
+      maxStock: 96,
+      unit: 'UN',
+      categoryId: botilleriaCategory.id,
+      branchId: botilleriaBranch.id,
+      isPerishable: true,
+      expirationDate: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
+      taxable: true,
+      taxRate: 0.19,
+    },
+  });
+
+  await prisma.alcoholicProduct.create({
+    data: {
+      productId: beerProduct.id,
+      alcoholContent: 5.0,
+      category: 'BEER_CRAFT',
+      origin: 'Chile - Valdivia',
+      winery: 'Cervecería Kunstmann',
+      servingTemperature: '4-6°C',
+      pairings: 'Pizza, hamburguesas, comida alemana',
+      rating: 4.5,
+      taxCategory: 'STANDARD',
+      volume: 500,
+      container: 'BOTTLE',
+      isReturnable: true,
+      depositAmount: 300,
+    },
+  });
+
+  // Create spirits product
+  const piscoProduct = await prisma.product.create({
+    data: {
+      sku: 'PIS-000001',
+      barcode: '7800444555666',
+      name: 'Pisco Control Gran Reservado',
+      description: 'Pisco chileno 40°',
+      price: 12990,
+      costPrice: 8500,
+      stock: 12,
+      minStock: 3,
+      maxStock: 24,
+      unit: 'UN',
+      categoryId: botilleriaCategory.id,
+      branchId: botilleriaBranch.id,
+      isPerishable: false,
+      taxable: true,
+      taxRate: 0.19,
+    },
+  });
+
+  await prisma.alcoholicProduct.create({
+    data: {
+      productId: piscoProduct.id,
+      alcoholContent: 40.0,
+      category: 'SPIRITS_PISCO',
+      origin: 'Chile - Valle del Elqui',
+      winery: 'Control',
+      servingTemperature: 'Ambiente o con hielo',
+      pairings: 'Pisco sour, cócteles',
+      rating: 4.3,
+      taxCategory: 'HIGH', // 31.5% ILA for spirits
+      volume: 700,
+      container: 'BOTTLE',
+      isReturnable: false,
+    },
+  });
+
+  // Sale hours restriction
+  await prisma.saleHoursRestriction.createMany({
+    data: [
+      { branchId: botilleriaBranch.id, dayOfWeek: 0, openTime: '09:00', closeTime: '23:00' }, // Sunday
+      { branchId: botilleriaBranch.id, dayOfWeek: 1, openTime: '09:00', closeTime: '23:00' }, // Monday
+      { branchId: botilleriaBranch.id, dayOfWeek: 2, openTime: '09:00', closeTime: '23:00' }, // Tuesday
+      { branchId: botilleriaBranch.id, dayOfWeek: 3, openTime: '09:00', closeTime: '23:00' }, // Wednesday
+      { branchId: botilleriaBranch.id, dayOfWeek: 4, openTime: '09:00', closeTime: '23:00' }, // Thursday
+      { branchId: botilleriaBranch.id, dayOfWeek: 5, openTime: '09:00', closeTime: '00:00' }, // Friday
+      { branchId: botilleriaBranch.id, dayOfWeek: 6, openTime: '09:00', closeTime: '00:00' }, // Saturday
+    ],
+  });
+
+  // Wine tasting event
+  const tastingEvent = await prisma.tastingEvent.create({
+    data: {
+      name: 'Cata de Vinos del Valle Central',
+      description: 'Degustación de 5 vinos premium del Valle Central de Chile',
+      eventDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
+      capacity: 20,
+      pricePerPerson: 25000,
+      status: 'OPEN_REGISTRATION',
+      branchId: botilleriaBranch.id,
+      products: {
+        create: [{ productId: wineProduct.id, servingSize: '50ml' }],
+      },
+    },
+  });
+
+  // Wine club subscription
+  await prisma.wineClubSubscription.create({
+    data: {
+      customerId: customer.id,
+      planType: 'PREMIUM',
+      status: 'ACTIVE',
+      monthlyAmount: 45000,
+      bottlesPerMonth: 3,
+      preferredCategories: JSON.stringify(['WINE_RED', 'WINE_WHITE']),
+      nextDeliveryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      branchId: botilleriaBranch.id,
+    },
+  });
+
+  console.log('✅ Botillería module data created');
+
+  // ============ TRANSBANK INTEGRATION DEMO DATA ============
+
+  // Transbank config for main branch
+  await prisma.transbankConfig.create({
+    data: {
+      branchId: branch.id,
+      environment: 'integration',
+      commerceCode: '597055555532',
+      apiKey: '579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C',
+      isWebpayEnabled: true,
+      isOneclickEnabled: false,
+    },
+  });
+
+  // Sample Transbank transaction
+  await prisma.transbankTransaction.create({
+    data: {
+      saleId: sale.id,
+      buyOrder: `MPOS-DEMO-${Date.now()}`,
+      sessionId: `SES-${sale.id}`,
+      amount: 3927,
+      status: 'AUTHORIZED',
+      token: `TBK-DEMO-${Date.now()}`,
+      responseCode: 0,
+      authorizationCode: '123456',
+      cardNumber: '6623',
+      cardType: 'CREDIT',
+      installmentsNumber: 0,
+      environment: 'integration',
+      completedAt: new Date(),
+    },
+  });
+
+  console.log('✅ Transbank integration data created');
+
+  // ============ SII ELECTRONIC INVOICING DEMO DATA ============
+
+  // SII config for main branch
+  await prisma.sIIConfig.create({
+    data: {
+      branchId: branch.id,
+      rutEmisor: '76.XXX.XXX-X',
+      razonSocial: 'Martin POS SpA',
+      giroEmisor: 'Venta al por menor de alimentos y bebidas',
+      direccionOrigen: 'Av. Principal 123',
+      comunaOrigen: 'Santiago',
+      ciudadOrigen: 'Santiago',
+      environment: 'certificacion',
+      isActive: true,
+      folioBoletaInicio: 1,
+      folioBoletaActual: 1,
+      folioBoletaFin: 1000,
+      folioFacturaInicio: 1,
+      folioFacturaActual: 1,
+      folioFacturaFin: 500,
+    },
+  });
+
+  // Sample DTE (Boleta)
+  const dteBoleta = await prisma.dTEDocument.create({
+    data: {
+      branchId: branch.id,
+      saleId: sale.id,
+      tipoDTE: 39, // Boleta
+      folio: 1,
+      rutEmisor: '76.XXX.XXX-X',
+      razonSocialEmisor: 'Martin POS SpA',
+      montoNeto: 3300,
+      montoExento: 0,
+      tasaIVA: 19,
+      iva: 627,
+      montoTotal: 3927,
+      status: 'ACCEPTED',
+      fechaEmision: new Date(),
+      acceptedBySIIAt: new Date(),
+      items: {
+        create: [
+          {
+            numeroLinea: 1,
+            nombreItem: 'Arroz Grado 1 - 1kg',
+            cantidad: 1,
+            precioUnitario: 1500,
+            montoItem: 1500,
+          },
+          {
+            numeroLinea: 2,
+            nombreItem: 'Coca Cola 1.5L',
+            cantidad: 1,
+            precioUnitario: 1800,
+            montoItem: 1800,
+          },
+        ],
+      },
+    },
+  });
+
+  // DTE Log
+  await prisma.dTELog.create({
+    data: {
+      dteId: dteBoleta.id,
+      action: 'ACCEPTED',
+      status: 'SUCCESS',
+      message: 'Boleta aceptada por SII',
+    },
+  });
+
+  console.log('✅ SII electronic invoicing data created');
+
   console.log('');
   console.log('🎉 Seed completed successfully!');
   console.log('');
   console.log('📊 DEMO DATA SUMMARY:');
-  console.log('  - 2 Branches (Principal + Norte)');
+  console.log('  - 3 Branches (Principal + Norte + Botillería)');
   console.log('  - 2 Users (Admin + Cajero)');
-  console.log('  - 4 Categories');
-  console.log('  - 4 Products');
+  console.log('  - 5 Categories');
+  console.log('  - 7 Products (4 general + 3 alcohol)');
   console.log('  - 1 Customer with loyalty points');
   console.log('  - 1 Loyalty Program');
   console.log('  - 1 Employee shift');
@@ -649,6 +954,20 @@ async function main() {
   console.log('  - 1 Consignment');
   console.log('  - 1 Payment gateway transaction');
   console.log('  - 1 Scale + 1 Temperature log');
+  console.log('');
+  console.log('🍷 BOTILLERÍA:');
+  console.log('  - 3 Alcoholic products (Wine, Beer, Pisco)');
+  console.log('  - 7 Sale hours restrictions');
+  console.log('  - 1 Tasting event');
+  console.log('  - 1 Wine club subscription');
+  console.log('');
+  console.log('💳 TRANSBANK:');
+  console.log('  - 1 Transbank configuration (integration)');
+  console.log('  - 1 Sample Webpay transaction');
+  console.log('');
+  console.log('📄 SII (Facturación Electrónica):');
+  console.log('  - 1 SII configuration');
+  console.log('  - 1 Sample DTE (Boleta)');
   console.log('');
   console.log('🔐 LOGIN CREDENTIALS:');
   console.log('  Admin:   admin@martinpos.com / admin123');

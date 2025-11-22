@@ -30,6 +30,13 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AdvancedAIModule } from './modules/advanced-ai/advanced-ai.module';
 import { FraudDetectionModule } from './modules/fraud-detection/fraud-detection.module';
 
+// Botillería Module
+import { BotilleriaModule } from './modules/botilleria/botilleria.module';
+
+// Payment & Invoicing (Chile)
+import { TransbankModule } from './modules/transbank/transbank.module';
+import { SIIModule } from './modules/sii/sii.module';
+
 // Health check
 import { HealthController } from './health.controller';
 
@@ -74,6 +81,13 @@ import { HealthController } from './health.controller';
     PromotionsModule,
     AdvancedAIModule,
     FraudDetectionModule,
+
+    // Botillería
+    BotilleriaModule,
+
+    // Payment & Invoicing (Chile)
+    TransbankModule,
+    SIIModule,
   ],
   controllers: [HealthController],
 })
