@@ -32,6 +32,7 @@ Sistema completo de Punto de Venta multi-módulo con asistencia de Inteligencia 
 - ⚙️ **Hardware Integration** - Balanzas electrónicas, sensores de temperatura
 - 🍷 **Módulo Botillería** - Control de alcoholes, verificación de edad, ILA, catas, club de vinos
 - 💳 **Transbank Webpay** - Integración completa con pagos Transbank Chile
+- 🖥️ **Transbank POS Físico** - Terminales físicos para pagos presenciales (VX520, VX680)
 - 📄 **SII Facturación Electrónica** - Boletas, facturas, notas de crédito con integración SII
 
 > **Ver todas las funcionalidades extendidas en [EXTENDED_FEATURES.md](EXTENDED_FEATURES.md)**

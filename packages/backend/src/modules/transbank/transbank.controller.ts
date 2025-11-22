@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Delete,
   Body,
   Param,
   Query,
@@ -10,10 +11,14 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { TransbankService } from './transbank.service';
+import { TransbankPOSService } from './transbank-pos.service';
 
 @Controller('transbank')
 export class TransbankController {
-  constructor(private transbankService: TransbankService) {}
+  constructor(
+    private transbankService: TransbankService,
+    private transbankPOSService: TransbankPOSService,
+  ) {}
 
   // ============================================
   // CONFIGURATION
@@ -118,6 +123,155 @@ export class TransbankController {
     return {
       code: parseInt(code),
       message: this.transbankService.getResponseCodeMessage(parseInt(code)),
+    };
+  }
+
+  // ============================================
+  // PHYSICAL POS TERMINAL - MANAGEMENT
+  // ============================================
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/terminal')
+  registerPOSTerminal(@Body() data: {
+    branchId: string;
+    terminalId: string;
+    serialNumber?: string;
+    model?: string;
+    name: string;
+    location?: string;
+    connectionType: string;
+    port?: string;
+    ipAddress?: string;
+  }) {
+    return this.transbankPOSService.registerTerminal(data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/terminals/:branchId')
+  getPOSTerminals(@Param('branchId') branchId: string) {
+    return this.transbankPOSService.getTerminals(branchId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/terminal/:terminalId')
+  getPOSTerminalById(@Param('terminalId') terminalId: string) {
+    return this.transbankPOSService.getTerminalById(terminalId);
+  }
+
+  // ============================================
+  // PHYSICAL POS TERMINAL - CONNECTION
+  // ============================================
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/terminal/:terminalId/connect')
+  connectPOSTerminal(@Param('terminalId') terminalId: string) {
+    return this.transbankPOSService.connectTerminal(terminalId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/terminal/:terminalId/disconnect')
+  disconnectPOSTerminal(@Param('terminalId') terminalId: string) {
+    return this.transbankPOSService.disconnectTerminal(terminalId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/terminal/:terminalId/poll')
+  pollPOSTerminal(@Param('terminalId') terminalId: string) {
+    return this.transbankPOSService.pollTerminal(terminalId);
+  }
+
+  // ============================================
+  // PHYSICAL POS TERMINAL - TRANSACTIONS
+  // ============================================
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/sale')
+  initiatePOSSale(@Body() data: {
+    terminalId: string;
+    amount: number;
+    tip?: number;
+    installments?: number;
+    saleId?: string;
+  }) {
+    return this.transbankPOSService.initiateSale(data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/void')
+  voidPOSTransaction(@Body() data: {
+    terminalId: string;
+    operationId?: string;
+  }) {
+    return this.transbankPOSService.voidTransaction(data);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/terminal/:terminalId/last-sale')
+  getLastPOSSale(@Param('terminalId') terminalId: string) {
+    return this.transbankPOSService.getLastSale(terminalId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/terminal/:terminalId/transactions')
+  getPOSTransactions(
+    @Param('terminalId') terminalId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.transbankPOSService.getTransactions(terminalId, {
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      status,
+      limit: limit ? parseInt(limit) : undefined,
+    });
+  }
+
+  // ============================================
+  // PHYSICAL POS TERMINAL - BATCH
+  // ============================================
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/batch/open')
+  openPOSBatch(@Body() data: { branchId: string; terminalId: string }) {
+    return this.transbankPOSService.openBatch(data.branchId, data.terminalId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('pos/batch/close')
+  closePOSBatch(@Body() data: { branchId: string; terminalId: string }) {
+    return this.transbankPOSService.closeBatch(data.branchId, data.terminalId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/batch/summary/:branchId/:terminalId')
+  getPOSBatchSummary(
+    @Param('branchId') branchId: string,
+    @Param('terminalId') terminalId: string,
+  ) {
+    return this.transbankPOSService.getBatchSummary(branchId, terminalId);
+  }
+
+  // ============================================
+  // PHYSICAL POS TERMINAL - REPORTS
+  // ============================================
+
+  @UseGuards(JwtAuthGuard)
+  @Get('pos/reports/daily/:branchId')
+  getPOSDailySummary(
+    @Param('branchId') branchId: string,
+    @Query('date') dateStr?: string,
+  ) {
+    const date = dateStr ? new Date(dateStr) : new Date();
+    return this.transbankPOSService.getDailySummary(branchId, date);
+  }
+
+  @Get('pos/response-code/:code')
+  getPOSResponseCodeMessage(@Param('code') code: string) {
+    return {
+      code: parseInt(code),
+      message: this.transbankPOSService.getResponseCodeMessage(parseInt(code)),
     };
   }
 }

@@ -1391,11 +1391,142 @@ model TransbankConfig {
   apiKey              String
   isWebpayEnabled     Boolean   @default(true)
   isOneclickEnabled   Boolean   @default(false)
+  isPOSEnabled        Boolean   @default(false)  // Physical terminal enabled
 
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  // Relations
+  terminals           POSTerminal[]
+
   @@map("transbank_configs")
+}
+
+// ============================================
+// TRANSBANK PHYSICAL POS TERMINAL MODELS
+// ============================================
+
+model POSTerminal {
+  id                  String            @id @default(cuid())
+  terminalId          String            @unique  // ID único del terminal
+  serialNumber        String?           // Número de serie
+  model               String?           // Modelo del equipo (VX520, VX680, etc.)
+  name                String            // Nombre descriptivo
+  location            String?           // Ubicación en local
+
+  // Conexión
+  connectionType      POSConnectionType @default(USB)
+  port                String?           // COM3, /dev/ttyUSB0, IP:puerto
+  baudRate            Int               @default(9600)
+  ipAddress           String?
+  macAddress          String?
+
+  // Estado
+  status              POSTerminalStatus @default(DISCONNECTED)
+  lastPingAt          DateTime?
+  lastTransactionAt   DateTime?
+
+  // Configuración Transbank
+  configId            String
+  config              TransbankConfig   @relation(fields: [configId], references: [id])
+
+  branchId            String
+  isActive            Boolean           @default(true)
+
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  // Relations
+  transactions        POSTransaction[]
+
+  @@index([branchId])
+  @@index([status])
+  @@map("pos_terminals")
+}
+
+model POSTransaction {
+  id                  String              @id @default(cuid())
+  saleId              String?
+  terminalId          String
+  terminal            POSTerminal         @relation(fields: [terminalId], references: [id])
+
+  // Datos de la transacción
+  operationCode       String              // Código de operación (venta, anulación, etc.)
+  amount              Int                 // Monto en CLP
+  tip                 Int                 @default(0)  // Propina
+  totalAmount         Int                 // amount + tip
+  installments        Int                 @default(0)  // Cuotas
+
+  // Respuesta del terminal
+  status              POSTransactionStatus @default(PENDING)
+  authorizationCode   String?
+  responseCode        Int?
+  responseMessage     String?
+
+  // Datos de la tarjeta (enmascarados)
+  cardNumber          String?             // Últimos 4 dígitos
+  cardType            String?             // VISA, MASTERCARD, AMEX, etc.
+  cardBrand           String?             // DEBIT, CREDIT
+
+  // Voucher
+  voucherNumber       String?
+  commerceCode        String?
+  terminalCode        String?
+  transactionDate     DateTime?
+  transactionTime     String?
+
+  // Datos adicionales
+  printData           String?             @db.Text  // Datos para impresión de voucher
+  rawResponse         Json?               // Respuesta completa del terminal
+
+  // Timestamps
+  initiatedAt         DateTime            @default(now())
+  completedAt         DateTime?
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([saleId])
+  @@index([terminalId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("pos_transactions")
+}
+
+model POSBatch {
+  id                  String          @id @default(cuid())
+  branchId            String
+  terminalId          String
+
+  batchNumber         Int
+  openedAt            DateTime        @default(now())
+  closedAt            DateTime?
+  status              POSBatchStatus  @default(OPEN)
+
+  // Totales del lote
+  totalTransactions   Int             @default(0)
+  totalSales          Int             @default(0)  // Cantidad de ventas
+  totalVoids          Int             @default(0)  // Cantidad de anulaciones
+  totalAmount         Int             @default(0)  // Monto total
+  totalTips           Int             @default(0)  // Total propinas
+
+  // Por tipo de tarjeta
+  creditAmount        Int             @default(0)
+  creditCount         Int             @default(0)
+  debitAmount         Int             @default(0)
+  debitCount          Int             @default(0)
+
+  // Cierre
+  closingData         Json?
+  closingReport       String?         @db.Text
+
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([branchId])
+  @@index([terminalId])
+  @@index([status])
+  @@map("pos_batches")
 }
 
 // ============================================
@@ -1574,7 +1705,9 @@ enum ModuleType {
 
 enum PaymentMethod {
   CASH
-  CARD
+  CARD            // Generic card (backward compatibility)
+  CARD_POS        // Physical POS terminal (Transbank)
+  CARD_WEBPAY     // Online Webpay Plus (Transbank)
   TRANSFER
   QR
   CREDIT
@@ -1873,5 +2006,43 @@ enum DTEStatus {
   ACCEPTED_WITH_OBJECTIONS
   REJECTED
   VOIDED
+  ERROR
+}
+
+// ============================================
+// POS TERMINAL ENUMS
+// ============================================
+
+enum POSConnectionType {
+  USB
+  SERIAL
+  ETHERNET
+  WIFI
+  BLUETOOTH
+}
+
+enum POSTerminalStatus {
+  CONNECTED
+  DISCONNECTED
+  BUSY
+  ERROR
+  MAINTENANCE
+}
+
+enum POSTransactionStatus {
+  PENDING
+  PROCESSING
+  APPROVED
+  DECLINED
+  CANCELLED
+  VOIDED
+  TIMEOUT
+  ERROR
+}
+
+enum POSBatchStatus {
+  OPEN
+  CLOSING
+  CLOSED
   ERROR
 }

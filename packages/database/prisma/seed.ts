@@ -828,7 +828,7 @@ async function main() {
   // ============ TRANSBANK INTEGRATION DEMO DATA ============
 
   // Transbank config for main branch
-  await prisma.transbankConfig.create({
+  const tbkConfig = await prisma.transbankConfig.create({
     data: {
       branchId: branch.id,
       environment: 'integration',
@@ -836,6 +836,7 @@ async function main() {
       apiKey: '579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C',
       isWebpayEnabled: true,
       isOneclickEnabled: false,
+      isPOSEnabled: true,
     },
   });
 
@@ -858,7 +859,109 @@ async function main() {
     },
   });
 
+  // ============ PHYSICAL POS TERMINAL DEMO DATA ============
+
+  // POS Terminal 1 - Main cashier
+  const posTerminal1 = await prisma.pOSTerminal.create({
+    data: {
+      terminalId: 'TBK-POS-001',
+      serialNumber: 'VX520-123456',
+      model: 'Verifone VX520',
+      name: 'Caja Principal',
+      location: 'Entrada principal',
+      connectionType: 'USB',
+      port: '/dev/ttyUSB0',
+      status: 'CONNECTED',
+      branchId: branch.id,
+      configId: tbkConfig.id,
+      isActive: true,
+      lastPingAt: new Date(),
+    },
+  });
+
+  // POS Terminal 2 - Secondary cashier
+  const posTerminal2 = await prisma.pOSTerminal.create({
+    data: {
+      terminalId: 'TBK-POS-002',
+      serialNumber: 'VX680-789012',
+      model: 'Verifone VX680',
+      name: 'Caja Secundaria',
+      location: 'Sector bebidas',
+      connectionType: 'WIFI',
+      ipAddress: '192.168.1.101',
+      status: 'DISCONNECTED',
+      branchId: branch.id,
+      configId: tbkConfig.id,
+      isActive: true,
+    },
+  });
+
+  // Sample POS Transaction
+  await prisma.pOSTransaction.create({
+    data: {
+      saleId: sale.id,
+      terminalId: posTerminal1.id,
+      operationCode: '0200', // Sale
+      amount: 3927,
+      tip: 500,
+      totalAmount: 4427,
+      installments: 0,
+      status: 'APPROVED',
+      authorizationCode: 'A1B2C3',
+      responseCode: 0,
+      responseMessage: 'Aprobado',
+      cardNumber: '****6623',
+      cardType: 'VISA',
+      cardBrand: 'CREDIT',
+      voucherNumber: 'V-001234',
+      commerceCode: '597055555532',
+      terminalCode: 'TBK-POS-001',
+      transactionDate: new Date(),
+      transactionTime: new Date().toTimeString().split(' ')[0],
+      printData: `
+═══════════════════════════════
+      COMPROBANTE DE VENTA
+        TRANSBANK POS
+═══════════════════════════════
+Fecha: ${new Date().toLocaleDateString('es-CL')}
+Hora: ${new Date().toLocaleTimeString('es-CL')}
+
+Tarjeta: VISA
+Número: ****6623
+
+Monto:    $3,927
+Propina:  $500
+────────────────────────────────
+TOTAL:    $4,427
+
+Estado: APROBADO
+═══════════════════════════════
+      `.trim(),
+      completedAt: new Date(),
+    },
+  });
+
+  // Create POS Batch
+  await prisma.pOSBatch.create({
+    data: {
+      branchId: branch.id,
+      terminalId: posTerminal1.id,
+      batchNumber: 1,
+      status: 'OPEN',
+      totalTransactions: 1,
+      totalSales: 1,
+      totalVoids: 0,
+      totalAmount: 4427,
+      totalTips: 500,
+      creditAmount: 4427,
+      creditCount: 1,
+      debitAmount: 0,
+      debitCount: 0,
+    },
+  });
+
   console.log('✅ Transbank integration data created');
+  console.log('✅ Physical POS terminal data created');
 
   // ============ SII ELECTRONIC INVOICING DEMO DATA ============
 

@@ -17,7 +17,9 @@ export enum UserRole {
 
 export enum PaymentMethod {
   CASH = 'CASH',
-  CARD = 'CARD',
+  CARD = 'CARD',           // Generic card (backward compatibility)
+  CARD_POS = 'CARD_POS',   // Physical POS terminal (Transbank)
+  CARD_WEBPAY = 'CARD_WEBPAY', // Online Webpay Plus (Transbank)
   TRANSFER = 'TRANSFER',
   QR = 'QR',
   CREDIT = 'CREDIT',
