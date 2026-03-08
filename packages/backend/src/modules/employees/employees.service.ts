@@ -109,7 +109,7 @@ export class EmployeesService {
     return {
       totalSales,
       salesCount: sales.length,
-      averageSale: salesCount > 0 ? totalSales / sales.length : 0,
+      averageSale: sales.length > 0 ? totalSales / sales.length : 0,
       totalHours,
       totalCommissions,
       salesPerHour: totalHours > 0 ? sales.length / totalHours : 0,

@@ -1,2 +1,8 @@
 packages:
-  - 'packages/*'
+  - 'packages/shared'
+  - 'packages/database'
+  - 'packages/backend'
+  - 'packages/web'
+  - 'packages/mobile'
+  # desktop excluded from default install due to electron-forge requiring git SSH
+  # To include: add 'packages/desktop' and run pnpm install with git/SSH available

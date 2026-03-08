@@ -1,275 +1,143 @@
-# 🏪 Martin POS - Sistema POS Asistido por IA
+# Martin POS - Sistema POS Multi-Modulo
 
-Sistema completo de Punto de Venta multi-módulo con asistencia de Inteligencia Artificial para:
-- 🍽️ **Restaurantes**
-- 📚 **Librerías y Bazares**
-- 🛒 **Minimarkets**
-- 🍷 **Botillerías** (NEW!)
+Sistema de Punto de Venta multi-modulo con asistencia de Inteligencia Artificial, orientado a:
+- Restaurantes
+- Librerias y Bazares
+- Minimarkets
+- Botillerias
 
-## 🌟 Características Principales
+## Estado del Proyecto
 
-### Core Features
-- ✅ Gestión completa de inventario
-- ✅ Sistema de ventas multi-método de pago
-- ✅ Flujo de caja y reportes financieros
-- ✅ Control de usuarios y roles
-- ✅ Multi-sucursal con sincronización
-- ✅ Impresión térmica (tickets 80mm)
-- ✅ Impresión de etiquetas con precios
+> **Nota**: Este proyecto esta en desarrollo activo. Consultar [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) para el estado real feature por feature y [AUDIT_REPORT.md](AUDIT_REPORT.md) para el informe de auditoria completo.
 
-### 🚀 Extended Features (NEW!)
-- 🎁 **Sistema de Fidelización** - Puntos de lealtad y descuentos personalizados por IA
-- 👥 **Control de Empleados** - Turnos, comisiones, métricas de desempeño
-- 🏢 **Multi-Sucursal Avanzado** - Transferencias de inventario con tracking completo
-- 📄 **Facturación Electrónica** - Facturas, notas de crédito/débito
-- 🚚 **Sistema de Delivery** - Integración Uber Eats, Rappi, Pedidos Ya
-- 💰 **Apartados/Layaway** - Sistema de pagos parciales
-- 🎉 **Promociones y Combos** - 2x1, descuentos, combos configurables
-- 🧠 **IA Avanzada** - OCR facturas, comandos de voz, reconocimiento de productos
-- 🔒 **Detección de Fraudes** - Alertas automáticas de transacciones sospechosas
-- 📦 **Consignaciones** - Control de productos en consignación
-- 💳 **Pasarelas de Pago** - Mercado Pago, Stripe, PayPal, Transbank
-- ⚙️ **Hardware Integration** - Balanzas electrónicas, sensores de temperatura
-- 🍷 **Módulo Botillería** - Control de alcoholes, verificación de edad, ILA, catas, club de vinos
-- 💳 **Transbank Webpay** - Integración completa con pagos Transbank Chile
-- 🖥️ **Transbank POS Físico** - Terminales físicos para pagos presenciales (VX520, VX680)
-- 📄 **SII Facturación Electrónica** - Boletas, facturas, notas de crédito con integración SII
+### Funcional (MVP)
+- Autenticacion JWT con roles (RBAC)
+- Gestion de productos con busqueda por nombre, SKU y codigo de barras
+- Sistema de ventas con carrito y multiples metodos de pago
+- Control de inventario con alertas de stock bajo y vencimiento
+- Gestion de clientes
+- Reportes de ventas
+- Dashboard con metricas del dia
+- Asistente IA (requiere API key de Anthropic)
+- Configuracion basica de sucursal
 
-> **Ver todas las funcionalidades extendidas en [EXTENDED_FEATURES.md](EXTENDED_FEATURES.md)**
+### Parcialmente Implementado
+- Modulo restaurante (mesas y ordenes basicas)
+- Multi-sucursal (estructura de datos lista, sin UI de cambio)
+- Caja registradora (backend listo, sin UI)
+- Categorias (backend listo, sin UI dedicada)
 
-### Asistencia por IA
-- 🤖 Análisis predictivo de inventario
-- 🤖 Alertas inteligentes de restock
-- 🤖 Detección de productos por vencimiento
-- 🤖 Optimización de mermas
-- 🤖 Sugerencias de compra
-- 🤖 Reportes automáticos con insights
-- 🤖 Asistente por voz para consultas
-- 🤖 **OCR** - Lectura automática de facturas de proveedores
-- 🤖 **Visión** - Reconocimiento de productos por imagen
-- 🤖 **Voz** - Procesamiento de comandos de voz
+### Stubs / Mocks (estructura de codigo existe pero funcionalidad limitada)
+- Fidelizacion / Puntos de lealtad
+- Control de empleados / turnos
+- Transferencias de inventario
+- Facturacion electronica
+- Delivery
+- Apartados / Layaway
+- Promociones y combos
+- Deteccion de fraude
+- Modulo botilleria
+- Transbank (respuestas simuladas)
+- SII (genera XML, sin conexion real al SII)
 
-### Métodos de Entrada
-- 🎤 **Voz** - Comandos y consultas por voz
-- 📷 **Fotografía** - Reconocimiento de productos
-- 📊 **Código de Barras** - Escaneo rápido
-- 📱 **QR Code** - Lectura de códigos QR
+### No Implementado
+- Aplicacion movil funcional (solo skeleton)
+- Aplicacion desktop/Electron funcional
+- Kitchen Display System (KDS)
+- Integraciones reales con plataformas de delivery
+- Redis caching
+- WebSockets / tiempo real
+- 2FA
+- OCR real de facturas
+- Reconocimiento por voz/imagen real
+- Escaneo de codigos de barras en web
 
-## 🏗️ Arquitectura
+## Arquitectura
 
 ```
 martin-pos/
 ├── packages/
-│   ├── backend/       # API NestJS + PostgreSQL
-│   ├── web/           # Next.js 14 (Admin/Desktop)
-│   ├── mobile/        # React Native + Expo
-│   ├── desktop/       # Electron (Estación POS)
-│   ├── database/      # Prisma Schema
-│   └── shared/        # Types & Utils compartidos
+│   ├── backend/       # API NestJS + PostgreSQL (27 modulos)
+│   ├── web/           # Next.js 14 (10 paginas funcionales)
+│   ├── mobile/        # React Native + Expo (skeleton)
+│   ├── desktop/       # Electron (minimal stub)
+│   ├── database/      # Prisma Schema (80+ modelos)
+│   └── shared/        # Types, enums, utils compartidos
 ```
 
-## 🚀 Inicio Rápido
+## Inicio Rapido
 
-### Requisitos Previos
+### Requisitos
 - Node.js >= 18
 - pnpm >= 8
-- PostgreSQL >= 14
-- (Opcional) Docker
+- PostgreSQL >= 14 (o Docker)
 
-### Instalación
+### Instalacion
 
-1. **Clonar el repositorio**
 ```bash
+# Clonar e instalar
 git clone <repo-url>
 cd martin-pos
-```
-
-2. **Instalar dependencias**
-```bash
 pnpm install
-```
 
-3. **Configurar variables de entorno**
-```bash
+# Configurar entorno
 cp .env.example .env
-# Editar .env con tus configuraciones
-```
+# Editar .env con tu DATABASE_URL
 
-4. **Setup de base de datos**
-```bash
-pnpm db:generate
-pnpm db:migrate
-```
+# Preparar base de datos
+cd packages/database
+npx prisma generate
+npx prisma migrate dev --name init
+npx prisma db seed
+cd ../..
 
-5. **Iniciar en modo desarrollo**
-```bash
-# Todos los servicios
-pnpm dev
+# Compilar dependencias compartidas
+pnpm --filter @martin-pos/shared build
+pnpm --filter @martin-pos/database build
 
-# O individualmente:
+# Iniciar desarrollo
 pnpm backend:dev   # API en puerto 3001
 pnpm web:dev       # Web en puerto 3000
-pnpm mobile:dev    # Expo
-pnpm desktop:dev   # Electron
 ```
 
-## 📦 Módulos Disponibles
+### Con Docker
 
-### 🍽️ Restaurantes
-- Control de mesas y comandas
-- Kitchen Display System (KDS)
-- Gestión de recetas e ingredientes
-- Control de mermas
-- Integración con delivery
-- Propinas y división de cuentas
-
-### 📚 Librerías/Bazares
-- Gestión de proveedores
-- Control de consignaciones
-- Sistema de apartados
-- Órdenes automatizadas
-
-### 🛒 Minimarkets
-- Productos perecederos
-- Alertas de vencimiento
-- Balanzas electrónicas
-- Control de temperatura
-- Gestión de lotes
-
-## 🛠️ Stack Tecnológico
-
-**Backend:**
-- NestJS + TypeScript
-- PostgreSQL + Prisma ORM
-- Redis (Cache)
-- Socket.io (Real-time)
-- 21 módulos backend
-- 120+ endpoints API
-
-**Frontend Web:**
-- Next.js 14 (App Router)
-- React 18 + TypeScript
-- TailwindCSS + shadcn/ui
-- Zustand (State)
-- React Query
-
-**Mobile:**
-- React Native + Expo
-- TypeScript
-- Expo Router
-- Expo Camera/Barcode Scanner
-
-**Desktop:**
-- Electron
-- React + TypeScript
-- node-thermal-printer
-
-**IA:**
-- Anthropic Claude API (Sonnet 4.5)
-- OpenAI GPT-4 Vision (OCR)
-- Whisper (Speech-to-Text)
-
-**Base de Datos:**
-- 45+ modelos Prisma
-- PostgreSQL 15
-- Redis para cache
-
-## 📱 Deployment
-
-### Quick Start con Docker (Recomendado para Demo)
 ```bash
+cp .env.example .env
 docker-compose up -d
-docker-compose exec backend npx prisma migrate deploy
-docker-compose exec backend npx prisma db seed
+# Primera vez: ejecutar migraciones y seed
+docker-compose exec backend sh -c "npx prisma migrate dev --name init --schema=./prisma/schema.prisma"
+docker-compose exec backend sh -c "npx prisma db seed --schema=./prisma/schema.prisma"
 ```
 
-**Ver [DEMO.md](DEMO.md) para guía completa de demostración.**
+### Credenciales Demo
 
-### Deployment en Cloud
+| Rol | Email | Contrasena |
+|-----|-------|------------|
+| Admin | admin@martinpos.com | admin123 |
+| Cajero | cajero@martinpos.com | cajero123 |
 
-**Plataformas Soportadas:**
-- ✅ **Railway** (Recomendado) - Deploy en 10 minutos
-- ✅ **Render** - Tier gratuito disponible
-- ✅ **AWS** - Producción enterprise
-- ✅ **Google Cloud** - IA/ML optimizado
-- ✅ **DigitalOcean** - Costo predecible
+## Stack Tecnologico
 
-**Ver [DEPLOYMENT.md](DEPLOYMENT.md) para instrucciones detalladas de cada plataforma.**
+| Capa | Tecnologia | Estado |
+|------|------------|--------|
+| Backend | NestJS + TypeScript | Funcional |
+| Base de Datos | PostgreSQL + Prisma | Funcional |
+| Frontend Web | Next.js 14 + Tailwind | Funcional |
+| Movil | React Native + Expo | Skeleton |
+| Desktop | Electron | Stub |
+| IA | Anthropic Claude API | Funcional (requiere API key) |
+| Auth | JWT + bcrypt + RBAC | Funcional |
+| Deploy | Docker + Docker Compose | Funcional |
 
-## 🔐 Seguridad
+## Documentacion
 
-- Autenticación JWT
-- RBAC (Role-Based Access Control)
-- Encriptación de datos sensibles
-- Rate limiting
-- CORS configurado
-- 2FA opcional
+- [AUDIT_REPORT.md](AUDIT_REPORT.md) - Informe de auditoria tecnica completo
+- [IMPLEMENTATION_MATRIX.md](IMPLEMENTATION_MATRIX.md) - Matriz de estado feature por feature
+- [DEPLOY_READY.md](DEPLOY_READY.md) - Guia de despliegue
+- [EXTENDED_FEATURES.md](EXTENDED_FEATURES.md) - Documentacion de features extendidas (aspiracional)
+- [.env.example](.env.example) - Variables de entorno
 
-## 📚 Documentación
-
-- **[DEMO.md](DEMO.md)** - Guía completa para ejecutar demo (5-30 minutos)
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Instrucciones de despliegue en cloud
-- **[EXTENDED_FEATURES.md](EXTENDED_FEATURES.md)** - Documentación de todas las funcionalidades extendidas
-- **[.env.example](.env.example)** - Ejemplo de variables de entorno
-
-## 📊 Métricas del Proyecto
-
-- **65+ modelos** de base de datos
-- **24 módulos** backend completos
-- **150+ endpoints** API REST
-- **15 categorías** de funcionalidades extendidas
-- **4 módulos** especializados (Restaurante, Librería, Minimarket, Botillería)
-- **4 plataformas** (Web, Mobile, Desktop, API)
-- **Transbank** integrado para pagos en Chile
-- **SII** integrado para facturación electrónica
-
-## 🎯 Casos de Uso
-
-### Restaurantes
-- Control de mesas y comandas
-- Integración con delivery (Uber Eats, Rappi)
-- División de cuentas
-- Propinas
-
-### Librerías/Bazares
-- Consignaciones
-- Apartados/Layaway
-- Productos variados
-
-### Minimarkets
-- Productos perecederos con alertas
-- Balanzas electrónicas
-- Control de temperatura
-- Gestión de lotes y vencimientos
-
-### Botillerías
-- Gestión de vinos, cervezas y licores
-- Verificación de edad obligatoria
-- Cálculo automático de ILA (Impuesto al Alcohol)
-- Control de horarios de venta
-- Eventos de cata
-- Club de vinos con suscripciones
-
-### Pagos y Facturación (Chile)
-- **Transbank Webpay Plus** - Pagos con tarjetas
-- **SII Boleta Electrónica** - Tipo 39
-- **SII Factura Electrónica** - Tipo 33
-- **Notas de Crédito** - Tipo 61
-- Validación de RUT
-- Generación de XML según normativa SII
-
-## 📄 Licencia
+## Licencia
 
 MIT
-
-## 👥 Contribuir
-
-Ver `CONTRIBUTING.md`
-
-## 📞 Soporte
-
-Para issues y sugerencias: [GitHub Issues](https://github.com/tu-repo/issues)
-
----
-
-**Desarrollado con ❤️ para transformar la gestión de negocios en Chile**

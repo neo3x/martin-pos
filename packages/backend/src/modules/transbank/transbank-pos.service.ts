@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DatabaseService } from '../../database/database.service';
+import { PrismaService } from '../../database/prisma.service';
 
 // Códigos de operación Transbank POS Integrado
 const POS_OPERATIONS = {
@@ -70,7 +70,7 @@ export class TransbankPOSService {
   // Simulated terminal connections (in production, use serialport library)
   private connectedTerminals: Map<string, boolean> = new Map();
 
-  constructor(private prisma: DatabaseService) {}
+  constructor(private prisma: PrismaService) {}
 
   // ============================================
   // TERMINAL MANAGEMENT

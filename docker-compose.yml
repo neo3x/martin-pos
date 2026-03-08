@@ -6,7 +6,7 @@ services:
     image: postgres:15-alpine
     container_name: martin-pos-db
     environment:
-      POSTGRES_DB: martin_pos
+      POSTGRES_DB: ${POSTGRES_DB:-martin_pos}
       POSTGRES_USER: ${POSTGRES_USER:-martinpos}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-martinpos123}
     ports:
@@ -14,12 +14,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U martinpos']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-martinpos}']
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis for caching
+  # Redis for caching (optional, not currently used in backend)
   redis:
     image: redis:7-alpine
     container_name: martin-pos-redis
@@ -41,17 +41,18 @@ services:
     container_name: martin-pos-api
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://martinpos:martinpos123@postgres:5432/martin_pos?schema=public
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-martinpos}:${POSTGRES_PASSWORD:-martinpos123}@postgres:5432/${POSTGRES_DB:-martin_pos}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-this-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       APP_PORT: 3001
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      INSTALLED_MODULE: ${INSTALLED_MODULE:-ALL}
     ports:
       - '3001:3001'
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
@@ -62,9 +63,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
     container_name: martin-pos-web
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001/api/v1}
     ports:
       - '3000:3000'
     depends_on:
