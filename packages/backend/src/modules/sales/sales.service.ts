@@ -266,6 +266,7 @@ export class SalesService {
           lte: endOfDay,
         },
       },
+      include: { items: true },
     });
 
     const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total), 0);
