@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@martin-pos/shared';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,7 +24,7 @@ export class UsersController {
 
   @Put(':id')
   @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
-  update(@Param('id') id: string, @Body() updateData: any) {
+  update(@Param('id') id: string, @Body() updateData: UpdateUserDto) {
     return this.usersService.update(id, updateData);
   }
 

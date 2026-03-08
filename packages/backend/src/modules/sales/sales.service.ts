@@ -1,70 +1,73 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { ProductsService } from '../products/products.service';
-import { ISaleCreate, SaleStatus, StockMovementType, InputMethod } from '@martin-pos/shared';
+import { ISaleCreate, SaleStatus, StockMovementType, InputMethod, ProductStatus } from '@martin-pos/shared';
 import { calculateSaleTotal } from '@martin-pos/shared';
 
 @Injectable()
 export class SalesService {
+  private readonly logger = new Logger(SalesService.name);
+
   constructor(
     private prisma: PrismaService,
     private productsService: ProductsService
   ) {}
 
   async create(data: ISaleCreate, userId: string, branchId: string) {
-    // Validate products and check stock
-    for (const item of data.items) {
-      const product = await this.productsService.findOne(item.productId);
-
-      if (Number(product.stock) < item.quantity) {
-        throw new BadRequestException(`Insufficient stock for product: ${product.name}`);
-      }
-    }
-
-    // Generate sale number
+    // Generate sale number before transaction
     const lastSale = await this.prisma.sale.findFirst({
       where: { branchId },
       orderBy: { createdAt: 'desc' },
     });
-
     const saleNumber = this.generateSaleNumber(lastSale?.saleNumber);
 
     // Get branch config for tax rate
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
     });
-
     const taxRate = (branch?.config as any)?.taxRate || 0.19;
 
-    // Calculate totals
-    let subtotal = 0;
-    const saleItems = [];
-
-    for (const item of data.items) {
-      const product = await this.productsService.findOne(item.productId);
-      const itemSubtotal = item.quantity * Number(item.unitPrice);
-      const itemDiscount = item.discount || 0;
-      const itemTax = product.taxable ? ((itemSubtotal - itemDiscount) * taxRate) : 0;
-      const itemTotal = itemSubtotal - itemDiscount + itemTax;
-
-      subtotal += itemSubtotal;
-
-      saleItems.push({
-        productId: item.productId,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        subtotal: itemSubtotal,
-        tax: itemTax,
-        discount: itemDiscount,
-        total: itemTotal,
-        notes: item.notes,
-      });
-    }
-
-    const totals = calculateSaleTotal(subtotal, taxRate, data.discount || 0);
-
-    // Create sale with items in a transaction
+    // All stock validation and mutation inside a single transaction
     const sale = await this.prisma.$transaction(async (tx) => {
+      // Validate stock inside transaction to prevent race conditions
+      const saleItems = [];
+      let subtotal = 0;
+
+      for (const item of data.items) {
+        const product = await tx.product.findUnique({
+          where: { id: item.productId },
+        });
+
+        if (!product || product.deletedAt) {
+          throw new NotFoundException(`Producto no encontrado: ${item.productId}`);
+        }
+
+        if (Number(product.stock) < item.quantity) {
+          throw new BadRequestException(
+            `Stock insuficiente para ${product.name}. Stock actual: ${Number(product.stock)}, solicitado: ${item.quantity}`
+          );
+        }
+
+        const itemSubtotal = item.quantity * Number(item.unitPrice);
+        const itemDiscount = item.discount || 0;
+        const itemTax = product.taxable ? ((itemSubtotal - itemDiscount) * taxRate) : 0;
+        const itemTotal = itemSubtotal - itemDiscount + itemTax;
+        subtotal += itemSubtotal;
+
+        saleItems.push({
+          productId: item.productId,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          subtotal: itemSubtotal,
+          tax: itemTax,
+          discount: itemDiscount,
+          total: itemTotal,
+          notes: item.notes,
+        });
+      }
+
+      const totals = calculateSaleTotal(subtotal, taxRate, data.discount || 0);
+
       // Create sale
       const newSale = await tx.sale.create({
         data: {
@@ -100,16 +103,17 @@ export class SalesService {
           where: { id: item.productId },
         });
 
-        const newStock = Number(product.stock) - item.quantity;
+        const previousStock = Number(product.stock);
+        const newStock = previousStock - item.quantity;
 
         await tx.product.update({
           where: { id: item.productId },
           data: {
             stock: newStock,
+            status: newStock === 0 ? ProductStatus.OUT_OF_STOCK : product.status,
           },
         });
 
-        // Create stock movement
         await tx.stockMovement.create({
           data: {
             productId: item.productId,
@@ -117,7 +121,7 @@ export class SalesService {
             userId,
             type: StockMovementType.SALE,
             quantity: item.quantity,
-            previousStock: Number(product.stock),
+            previousStock,
             newStock,
             referenceId: newSale.id,
             inputMethod: InputMethod.MANUAL,
@@ -128,6 +132,7 @@ export class SalesService {
       return newSale;
     });
 
+    this.logger.log(`Sale created: ${sale.saleNumber} total=${sale.total} by user ${userId}`);
     return sale;
   }
 

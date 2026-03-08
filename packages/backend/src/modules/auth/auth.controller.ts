@@ -1,22 +1,30 @@
-import { Controller, Post, Body, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Request, HttpCode, HttpStatus, Get, Logger } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RegisterDto } from './dto/register.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(private authService: AuthService) {}
 
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async login(@Request() req) {
+    this.logger.log(`Login: ${req.user.email} (${req.user.role})`);
     return this.authService.login(req.user);
   }
 
   @Post('register')
-  async register(@Body() userData: any) {
-    return this.authService.register(userData);
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  async register(@Body() registerDto: RegisterDto) {
+    this.logger.log(`Register attempt: ${registerDto.email}`);
+    return this.authService.register(registerDto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -30,13 +38,13 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout() {
-    return { message: 'Logged out successfully' };
+    return { message: 'Sesión cerrada correctamente' };
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post('me')
-  @HttpCode(HttpStatus.OK)
+  @Get('me')
   async getProfile(@Request() req) {
-    return req.user;
+    const { password: _, ...user } = req.user;
+    return user;
   }
 }

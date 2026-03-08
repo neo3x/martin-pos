@@ -1,11 +1,19 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: ['error', 'warn', 'log', 'debug', 'verbose'],
   });
+
+  // Security headers
+  app.use(helmet());
+
+  // Global exception filter
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -19,10 +27,13 @@ async function bootstrap() {
     })
   );
 
-  // CORS
+  // CORS - restrict in production
+  const corsOrigin = process.env.CORS_ORIGIN;
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: corsOrigin ? corsOrigin.split(',') : '*',
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // Global prefix
@@ -31,8 +42,10 @@ async function bootstrap() {
   const port = process.env.APP_PORT || 3001;
   await app.listen(port);
 
-  console.log(`🚀 Martin POS API running on: http://localhost:${port}/api/v1`);
-  console.log(`📚 Module: ${process.env.INSTALLED_MODULE || 'ALL'}`);
+  const logger = new Logger('Bootstrap');
+  logger.log(`Martin POS API running on: http://localhost:${port}/api/v1`);
+  logger.log(`Module: ${process.env.INSTALLED_MODULE || 'ALL'}`);
+  logger.log(`CORS origin: ${corsOrigin || '*'}`);
 }
 
 bootstrap();

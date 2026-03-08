@@ -14,6 +14,7 @@ import { Response } from 'express';
 import { SalesService } from './sales.service';
 import { PrinterService } from './printer.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CreateSaleDto } from './dto/create-sale.dto';
 
 @Controller('sales')
 @UseGuards(JwtAuthGuard)
@@ -40,7 +41,7 @@ export class SalesController {
   }
 
   @Post()
-  async create(@Body() createData: any, @Request() req) {
+  async create(@Body() createData: CreateSaleDto, @Request() req) {
     return this.salesService.create(createData, req.user.id, req.user.branchId);
   }
 

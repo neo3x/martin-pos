@@ -1,11 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
-import { IAuthResponse } from '@martin-pos/shared';
+import { IAuthResponse, UserRole } from '@martin-pos/shared';
+import { RegisterDto } from './dto/register.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService
@@ -15,17 +18,21 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Credenciales inválidas');
     }
 
     if (!user.isActive) {
-      throw new UnauthorizedException('User is inactive');
+      throw new UnauthorizedException('Usuario inactivo');
     }
 
     const { password: _, ...result } = user;
@@ -50,13 +57,22 @@ export class AuthService {
     };
   }
 
-  async register(userData: any): Promise<IAuthResponse> {
-    const hashedPassword = await bcrypt.hash(userData.password, 10);
+  async register(registerDto: RegisterDto): Promise<IAuthResponse> {
+    // Check if email already exists
+    const existing = await this.usersService.findByEmail(registerDto.email);
+    if (existing) {
+      throw new ConflictException('El email ya está registrado');
+    }
+
+    const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
     const user = await this.usersService.create({
-      ...userData,
+      ...registerDto,
       password: hashedPassword,
+      role: UserRole.CASHIER,
     });
+
+    this.logger.log(`User registered: ${user.email}`);
 
     const { password: _, ...userWithoutPassword } = user;
 
@@ -67,7 +83,7 @@ export class AuthService {
     const user = await this.usersService.findOne(userId);
 
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid user');
+      throw new UnauthorizedException('Usuario inválido');
     }
 
     const payload = {
