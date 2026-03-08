@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CreateCategoryDto } from './dto/create-category.dto';
 
 @Controller('categories')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +14,7 @@ export class CategoriesController {
   }
 
   @Post()
-  create(@Body() data: any, @Request() req) {
+  create(@Body() data: CreateCategoryDto, @Request() req) {
     return this.categoriesService.create({ ...data, branchId: req.user.branchId });
   }
 }

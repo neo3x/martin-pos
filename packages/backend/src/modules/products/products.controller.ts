@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CreateProductDto, UpdateProductDto, UpdateStockDto } from './dto/create-product.dto';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard)
@@ -49,7 +50,7 @@ export class ProductsController {
   }
 
   @Post()
-  create(@Body() createData: any, @Request() req) {
+  create(@Body() createData: CreateProductDto, @Request() req) {
     return this.productsService.create({
       ...createData,
       branchId: req.user.branchId,
@@ -57,17 +58,17 @@ export class ProductsController {
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() updateData: any) {
+  update(@Param('id') id: string, @Body() updateData: UpdateProductDto) {
     return this.productsService.update(id, updateData);
   }
 
   @Put(':id/stock')
   updateStock(
     @Param('id') id: string,
-    @Body() data: { quantity: number; inputMethod?: string },
+    @Body() data: UpdateStockDto,
     @Request() req
   ) {
-    return this.productsService.updateStock(id, data.quantity, req.user.id, data.inputMethod as any);
+    return this.productsService.updateStock(id, data.quantity, req.user.id, data.inputMethod as any, data.reason);
   }
 
   @Delete(':id')

@@ -1,10 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { IProductCreate, ProductStatus, InputMethod } from '@martin-pos/shared';
+import { ProductStatus, InputMethod } from '@martin-pos/shared';
 import { Prisma } from '@martin-pos/database';
+import { CreateProductDto, UpdateProductDto, UpdateStockDto } from './dto/create-product.dto';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async findAll(branchId: string, filters?: any) {
@@ -15,9 +18,9 @@ export class ProductsService {
       ...(filters?.categoryId && { categoryId: filters.categoryId }),
       ...(filters?.search && {
         OR: [
-          { name: { contains: filters.search, mode: 'insensitive' } },
-          { sku: { contains: filters.search, mode: 'insensitive' } },
-          { barcode: { contains: filters.search, mode: 'insensitive' } },
+          { name: { contains: filters.search, mode: 'insensitive' as const } },
+          { sku: { contains: filters.search, mode: 'insensitive' as const } },
+          { barcode: { contains: filters.search, mode: 'insensitive' as const } },
         ],
       }),
     };
@@ -28,6 +31,7 @@ export class ProductsService {
         category: true,
       },
       orderBy: { createdAt: 'desc' },
+      take: filters?.limit ? parseInt(filters.limit) : 100,
     });
   }
 
@@ -36,15 +40,6 @@ export class ProductsService {
       where: { id },
       include: {
         category: true,
-        recipe: {
-          include: {
-            ingredients: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
         productLots: {
           where: {
             quantity: { gt: 0 },
@@ -57,7 +52,7 @@ export class ProductsService {
     });
 
     if (!product || product.deletedAt) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException('Producto no encontrado');
     }
 
     return product;
@@ -76,7 +71,7 @@ export class ProductsService {
     });
 
     if (!product) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException('Producto no encontrado');
     }
 
     return product;
@@ -95,13 +90,13 @@ export class ProductsService {
     });
 
     if (!product) {
-      throw new NotFoundException('Product not found');
+      throw new NotFoundException('Producto no encontrado');
     }
 
     return product;
   }
 
-  async create(data: IProductCreate & { branchId: string }) {
+  async create(data: CreateProductDto & { branchId: string }) {
     // Check if SKU or barcode already exists
     if (data.barcode) {
       const existing = await this.prisma.product.findFirst({
@@ -113,22 +108,39 @@ export class ProductsService {
       });
 
       if (existing) {
-        throw new BadRequestException('Product with this barcode already exists');
+        throw new BadRequestException('Ya existe un producto con este código de barras');
       }
     }
 
-    return this.prisma.product.create({
+    if (data.sku) {
+      const existing = await this.prisma.product.findFirst({
+        where: {
+          sku: data.sku,
+          branchId: data.branchId,
+          deletedAt: null,
+        },
+      });
+
+      if (existing) {
+        throw new BadRequestException('Ya existe un producto con este SKU');
+      }
+    }
+
+    const product = await this.prisma.product.create({
       data: {
         ...data,
         status: ProductStatus.ACTIVE,
-      },
+      } as any,
       include: {
         category: true,
       },
     });
+
+    this.logger.log(`Product created: ${product.name} (${product.id})`);
+    return product;
   }
 
-  async update(id: string, data: Partial<IProductCreate>) {
+  async update(id: string, data: UpdateProductDto) {
     const product = await this.findOne(id);
 
     return this.prisma.product.update({
@@ -144,40 +156,58 @@ export class ProductsService {
     productId: string,
     quantity: number,
     userId: string,
-    inputMethod: InputMethod = InputMethod.MANUAL
+    inputMethod: InputMethod = InputMethod.MANUAL,
+    reason?: string
   ) {
-    const product = await this.findOne(productId);
+    // Use transaction to prevent race conditions
+    return this.prisma.$transaction(async (tx) => {
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+      });
 
-    const newStock = Number(product.stock) + quantity;
+      if (!product || product.deletedAt) {
+        throw new NotFoundException('Producto no encontrado');
+      }
 
-    if (newStock < 0) {
-      throw new BadRequestException('Insufficient stock');
-    }
+      const previousStock = Number(product.stock);
+      const newStock = previousStock + quantity;
 
-    // Update product stock
-    const updated = await this.prisma.product.update({
-      where: { id: productId },
-      data: {
-        stock: newStock,
-        status: newStock === 0 ? ProductStatus.OUT_OF_STOCK : product.status,
-      },
+      if (newStock < 0) {
+        throw new BadRequestException(
+          `Stock insuficiente para ${product.name}. Stock actual: ${previousStock}, solicitado: ${Math.abs(quantity)}`
+        );
+      }
+
+      // Update product stock
+      const updated = await tx.product.update({
+        where: { id: productId },
+        data: {
+          stock: newStock,
+          status: newStock === 0 ? ProductStatus.OUT_OF_STOCK : product.status,
+        },
+      });
+
+      // Create stock movement record
+      await tx.stockMovement.create({
+        data: {
+          productId,
+          branchId: product.branchId,
+          type: quantity > 0 ? 'PURCHASE' : 'ADJUSTMENT',
+          quantity: Math.abs(quantity),
+          previousStock,
+          newStock,
+          userId,
+          inputMethod,
+          reason,
+        },
+      });
+
+      this.logger.log(
+        `Stock updated: ${product.name} ${previousStock} -> ${newStock} (${quantity > 0 ? '+' : ''}${quantity}) by user ${userId}`
+      );
+
+      return updated;
     });
-
-    // Create stock movement record
-    await this.prisma.stockMovement.create({
-      data: {
-        productId,
-        branchId: product.branchId,
-        type: quantity > 0 ? 'PURCHASE' : 'SALE',
-        quantity: Math.abs(quantity),
-        previousStock: Number(product.stock),
-        newStock,
-        userId,
-        inputMethod,
-      },
-    });
-
-    return updated;
   }
 
   async remove(id: string) {
@@ -193,14 +223,15 @@ export class ProductsService {
   }
 
   async getLowStockProducts(branchId: string) {
+    // Use raw query to compare stock with minStock column
     return this.prisma.product.findMany({
       where: {
         branchId,
         deletedAt: null,
-        stock: {
-          lte: this.prisma.product.fields.minStock,
-        },
         status: ProductStatus.ACTIVE,
+        AND: [
+          { minStock: { gt: 0 } },
+        ],
       },
       include: {
         category: true,
@@ -208,7 +239,10 @@ export class ProductsService {
       orderBy: {
         stock: 'asc',
       },
-    });
+    }).then(products =>
+      // Filter in memory since Prisma doesn't support column-to-column comparison
+      products.filter(p => Number(p.stock) <= Number(p.minStock))
+    );
   }
 
   async getExpiringProducts(branchId: string, days: number = 7) {
