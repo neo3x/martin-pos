@@ -1,9 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Utensils, Users, Clock, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuthStore, type BusinessModule } from '@/store/auth';
 
 const TABLE_STATUS_COLORS: Record<string, string> = {
   AVAILABLE: 'bg-green-100 border-green-300 text-green-800',
@@ -21,28 +23,67 @@ const TABLE_STATUS_LABELS: Record<string, string> = {
 
 export default function RestaurantPage() {
   const queryClient = useQueryClient();
+  const { activeModule, user, setActiveModule } = useAuthStore();
+  const moduleType = (activeModule || user?.moduleType || 'ALL') as BusinessModule;
+  const hasAccess = moduleType === 'RESTAURANT' || moduleType === 'ALL';
 
   const { data: tables, isLoading } = useQuery({
     queryKey: ['tables'],
     queryFn: () => api.get('/restaurant/tables').then((res) => res.data),
+    enabled: hasAccess,
   });
 
   const { data: activeOrders } = useQuery({
     queryKey: ['active-orders'],
     queryFn: () => api.get('/restaurant/orders?status=active').then((res) => res.data),
+    enabled: hasAccess,
   });
 
   const updateTableMutation = useMutation({
-    mutationFn: ({ tableId, status }: { tableId: string; status: string }) =>
+    mutationFn: ({ tableId, status }: { tableId: string; status: keyof typeof TABLE_STATUS_LABELS }) =>
       api.put(`/restaurant/tables/${tableId}/status`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tables'] });
       toast.success('Mesa actualizada');
     },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || 'No fue posible actualizar la mesa');
+    },
   });
+
+  if (!hasAccess) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <h1 className="text-2xl font-bold text-slate-900">Modulo restaurante no activo</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Cambia al modulo Restaurante para acceder a mesas y comandas.
+        </p>
+        <div className="mt-4 flex justify-center gap-2">
+          <button
+            onClick={() => setActiveModule('RESTAURANT')}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            Cambiar a Restaurante
+          </button>
+          <Link
+            href="/dashboard"
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Volver al dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const availableCount = tables?.filter((t: any) => t.status === 'AVAILABLE').length || 0;
   const occupiedCount = tables?.filter((t: any) => t.status === 'OCCUPIED').length || 0;
+  const nextStatus: Record<string, keyof typeof TABLE_STATUS_LABELS> = {
+    AVAILABLE: 'OCCUPIED',
+    OCCUPIED: 'CLEANING',
+    CLEANING: 'AVAILABLE',
+    RESERVED: 'AVAILABLE',
+  };
 
   return (
     <div className="space-y-6">
@@ -113,6 +154,12 @@ export default function RestaurantPage() {
                 <p className="mt-1 text-xs font-medium">
                   {TABLE_STATUS_LABELS[table.status] || table.status}
                 </p>
+                <button
+                  onClick={() => updateTableMutation.mutate({ tableId: table.id, status: nextStatus[table.status] || 'AVAILABLE' })}
+                  className="mt-3 rounded-md bg-white/80 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-white"
+                >
+                  Cambiar a {TABLE_STATUS_LABELS[nextStatus[table.status] || 'AVAILABLE']}
+                </button>
               </div>
             ))}
           </div>

@@ -1,1086 +1,616 @@
-import { PrismaClient, ModuleType, UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import { PrismaClient, ModuleType, UserRole, PaymentMethod } from '@prisma/client';
 
 const prisma = new PrismaClient();
+const ADMIN_PASSWORD_HASH = '$2b$10$TqkNqM4F2NfB9XHDUBNa7ebuQhMdvb5CWJPz1wHbPLbHygrkwQnzi'; // admin123
 
-async function main() {
-  console.log('🌱 Starting seed...');
+type Blueprint = {
+  branchName: string;
+  branchEmail: string;
+  categories: { name: string; description: string }[];
+  products: {
+    sku: string;
+    name: string;
+    description: string;
+    categoryName: string;
+    price: number;
+    costPrice: number;
+    stock: number;
+    minStock: number;
+    expirationDays?: number;
+  }[];
+  customers: { name: string; email: string; phone: string; address: string }[];
+  tables?: { number: string; capacity: number; status: 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING' }[];
+};
 
-  // Hash password
-  const hashedPassword = await bcrypt.hash('admin123', 10);
-
-  // Create default branch
-  const branch = await prisma.branch.upsert({
-    where: { id: 'default-branch' },
-    update: {},
-    create: {
-      id: 'default-branch',
-      name: 'Sucursal Principal',
-      address: 'Av. Principal 123',
-      phone: '+56912345678',
-      email: 'sucursal@martinpos.com',
-      moduleType: ModuleType.ALL,
-      isActive: true,
-      config: {
-        currency: 'CLP',
-        timezone: 'America/Santiago',
-        taxRate: 0.19,
-        printerConfig: {
-          enabled: true,
-          width: 48,
-        },
-        features: ['inventory', 'sales', 'reports', 'ai-assistant'],
+const blueprints: Record<Exclude<ModuleType, 'ALL'>, Blueprint> = {
+  RESTAURANT: {
+    branchName: 'Demo Restaurante',
+    branchEmail: 'demo.restaurant@martinpos.local',
+    categories: [
+      { name: 'Entradas', description: 'Aperitivos y entradas' },
+      { name: 'Fondos', description: 'Platos principales' },
+      { name: 'Postres', description: 'Postres de la casa' },
+      { name: 'Bebidas', description: 'Jugos y bebidas' },
+    ],
+    products: [
+      {
+        sku: 'RES-ENT-001',
+        name: 'Empanadas de queso',
+        description: 'Porcion x3',
+        categoryName: 'Entradas',
+        price: 4990,
+        costPrice: 2800,
+        stock: 24,
+        minStock: 8,
       },
-    },
-  });
-
-  console.log('✅ Branch created:', branch.name);
-
-  // Create super admin user
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@martinpos.com' },
-    update: {},
-    create: {
-      email: 'admin@martinpos.com',
-      password: hashedPassword,
-      firstName: 'Admin',
-      lastName: 'Sistema',
-      role: UserRole.SUPER_ADMIN,
-      isActive: true,
-      branchId: branch.id,
-    },
-  });
-
-  console.log('✅ Admin user created:', admin.email);
-
-  // Create categories
-  const categories = await Promise.all([
-    prisma.category.create({
-      data: {
-        name: 'Abarrotes',
-        description: 'Productos de almacén',
-        branchId: branch.id,
-        icon: '📦',
-        color: '#f59e0b',
+      {
+        sku: 'RES-FON-001',
+        name: 'Lomo vetado',
+        description: 'Con pure rustico',
+        categoryName: 'Fondos',
+        price: 14990,
+        costPrice: 8600,
+        stock: 16,
+        minStock: 6,
       },
-    }),
-    prisma.category.create({
-      data: {
-        name: 'Frutas y Verduras',
-        description: 'Productos perecederos',
-        branchId: branch.id,
-        icon: '🥬',
-        color: '#10b981',
+      {
+        sku: 'RES-POS-001',
+        name: 'Cheesecake frutos rojos',
+        description: 'Porcion individual',
+        categoryName: 'Postres',
+        price: 4990,
+        costPrice: 2100,
+        stock: 10,
+        minStock: 4,
+        expirationDays: 2,
       },
-    }),
-    prisma.category.create({
-      data: {
-        name: 'Bebidas',
-        description: 'Bebidas y líquidos',
-        branchId: branch.id,
-        icon: '🥤',
-        color: '#3b82f6',
-      },
-    }),
-    prisma.category.create({
-      data: {
-        name: 'Lácteos',
-        description: 'Productos lácteos',
-        branchId: branch.id,
-        icon: '🥛',
-        color: '#8b5cf6',
-      },
-    }),
-  ]);
-
-  console.log('✅ Categories created:', categories.length);
-
-  // Create sample products
-  const products = await Promise.all([
-    prisma.product.create({
-      data: {
-        sku: 'ABR-000001',
-        barcode: '7800123456789',
-        name: 'Arroz Grado 1 - 1kg',
-        description: 'Arroz blanco grado 1',
-        price: 1500,
-        costPrice: 1000,
-        stock: 50,
-        minStock: 10,
-        maxStock: 100,
-        unit: 'UN',
-        categoryId: categories[0].id,
-        branchId: branch.id,
-        isPerishable: false,
-        taxable: true,
-        taxRate: 0.19,
-      },
-    }),
-    prisma.product.create({
-      data: {
-        sku: 'FRU-000001',
-        barcode: '2000000000001',
-        name: 'Manzanas Rojas',
-        description: 'Manzanas rojas por kilo',
-        price: 2500,
-        costPrice: 1500,
-        stock: 25.5,
-        minStock: 5,
-        maxStock: 50,
-        unit: 'KG',
-        categoryId: categories[1].id,
-        branchId: branch.id,
-        isPerishable: true,
-        requiresWeighing: true,
-        expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-        taxable: true,
-        taxRate: 0.19,
-      },
-    }),
-    prisma.product.create({
-      data: {
-        sku: 'BEB-000001',
-        barcode: '7800987654321',
-        name: 'Coca Cola 1.5L',
-        description: 'Bebida gaseosa',
-        price: 1800,
+      {
+        sku: 'RES-BEB-001',
+        name: 'Limonada menta',
+        description: '500ml',
+        categoryName: 'Bebidas',
+        price: 2990,
         costPrice: 1200,
+        stock: 32,
+        minStock: 10,
+      },
+    ],
+    customers: [
+      { name: 'Maria Lopez', email: 'maria.restaurant@demo.local', phone: '+56990000111', address: 'Centro 123' },
+      { name: 'Jorge Diaz', email: 'jorge.restaurant@demo.local', phone: '+56990000222', address: 'Norte 55' },
+    ],
+    tables: [
+      { number: '1', capacity: 4, status: 'AVAILABLE' },
+      { number: '2', capacity: 2, status: 'OCCUPIED' },
+      { number: '3', capacity: 6, status: 'AVAILABLE' },
+      { number: '4', capacity: 4, status: 'RESERVED' },
+      { number: '5', capacity: 2, status: 'CLEANING' },
+      { number: '6', capacity: 4, status: 'OCCUPIED' },
+    ],
+  },
+  MINIMARKET: {
+    branchName: 'Demo Minimarket',
+    branchEmail: 'demo.minimarket@martinpos.local',
+    categories: [
+      { name: 'Abarrotes', description: 'Despensa diaria' },
+      { name: 'Bebidas', description: 'Bebidas y jugos' },
+      { name: 'Snacks', description: 'Dulces y salados' },
+      { name: 'Limpieza', description: 'Limpieza hogar y negocio' },
+    ],
+    products: [
+      {
+        sku: 'MIN-ABA-001',
+        name: 'Arroz 1kg',
+        description: 'Grado 1',
+        categoryName: 'Abarrotes',
+        price: 1490,
+        costPrice: 980,
+        stock: 40,
+        minStock: 12,
+      },
+      {
+        sku: 'MIN-ABA-002',
+        name: 'Fideos spaghetti',
+        description: '400g',
+        categoryName: 'Abarrotes',
+        price: 990,
+        costPrice: 640,
+        stock: 48,
+        minStock: 14,
+      },
+      {
+        sku: 'MIN-BEB-001',
+        name: 'Bebida cola 1.5L',
+        description: 'Retornable',
+        categoryName: 'Bebidas',
+        price: 1990,
+        costPrice: 1290,
+        stock: 28,
+        minStock: 10,
+      },
+      {
+        sku: 'MIN-SNK-001',
+        name: 'Papas fritas 140g',
+        description: 'Sabor original',
+        categoryName: 'Snacks',
+        price: 1790,
+        costPrice: 1090,
         stock: 30,
         minStock: 10,
-        maxStock: 60,
-        unit: 'UN',
-        categoryId: categories[2].id,
-        branchId: branch.id,
-        isPerishable: false,
-        taxable: true,
-        taxRate: 0.19,
       },
-    }),
-    prisma.product.create({
-      data: {
-        sku: 'LAC-000001',
-        barcode: '7800555666777',
-        name: 'Leche Entera 1L',
-        description: 'Leche entera pasteurizada',
-        price: 1200,
-        costPrice: 800,
+      {
+        sku: 'MIN-LIM-001',
+        name: 'Detergente 3L',
+        description: 'Ropa',
+        categoryName: 'Limpieza',
+        price: 5490,
+        costPrice: 3900,
+        stock: 12,
+        minStock: 6,
+      },
+    ],
+    customers: [
+      { name: 'Camila Soto', email: 'camila.minimarket@demo.local', phone: '+56990000333', address: 'Sur 98' },
+      { name: 'Pedro Rojas', email: 'pedro.minimarket@demo.local', phone: '+56990000444', address: 'Poniente 44' },
+    ],
+  },
+  BOTILLERIA: {
+    branchName: 'Demo Botilleria',
+    branchEmail: 'demo.botilleria@martinpos.local',
+    categories: [
+      { name: 'Vinos', description: 'Tintos y blancos' },
+      { name: 'Cervezas', description: 'Lager y artesanales' },
+      { name: 'Destilados', description: 'Whisky, vodka, ron y pisco' },
+      { name: 'Mixers', description: 'Energeticas y gaseosas' },
+    ],
+    products: [
+      {
+        sku: 'BOT-VIN-001',
+        name: 'Vino tinto reserva',
+        description: '750ml',
+        categoryName: 'Vinos',
+        price: 8990,
+        costPrice: 5400,
         stock: 20,
         minStock: 8,
-        maxStock: 40,
-        unit: 'UN',
-        categoryId: categories[3].id,
-        branchId: branch.id,
-        isPerishable: true,
-        expirationDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), // 5 days
-        taxable: true,
-        taxRate: 0.19,
       },
-    }),
-  ]);
+      {
+        sku: 'BOT-CER-001',
+        name: 'Cerveza lager 330ml',
+        description: 'Unidad',
+        categoryName: 'Cervezas',
+        price: 1690,
+        costPrice: 900,
+        stock: 55,
+        minStock: 15,
+      },
+      {
+        sku: 'BOT-DES-001',
+        name: 'Whisky blend',
+        description: '700ml',
+        categoryName: 'Destilados',
+        price: 18990,
+        costPrice: 12900,
+        stock: 10,
+        minStock: 5,
+      },
+      {
+        sku: 'BOT-MIX-001',
+        name: 'Bebida energetica',
+        description: '250ml',
+        categoryName: 'Mixers',
+        price: 1490,
+        costPrice: 850,
+        stock: 40,
+        minStock: 12,
+      },
+    ],
+    customers: [
+      { name: 'Fernanda Ruiz', email: 'fernanda.botilleria@demo.local', phone: '+56990000555', address: 'Centro 999' },
+      { name: 'Sebastian Reyes', email: 'sebastian.botilleria@demo.local', phone: '+56990000666', address: 'Los Pinos 13' },
+    ],
+  },
+  BOOKSTORE: {
+    branchName: 'Demo Libreria Bazar',
+    branchEmail: 'demo.bookstore@martinpos.local',
+    categories: [
+      { name: 'Libros', description: 'Lectura y estudio' },
+      { name: 'Cuadernos', description: 'Escolares y universitarios' },
+      { name: 'Escritura', description: 'Lapices y marcadores' },
+      { name: 'Oficina', description: 'Papeleria y accesorios' },
+    ],
+    products: [
+      {
+        sku: 'LIB-BOO-001',
+        name: 'Novela clasica',
+        description: 'Edicion tapa blanda',
+        categoryName: 'Libros',
+        price: 12990,
+        costPrice: 7900,
+        stock: 18,
+        minStock: 6,
+      },
+      {
+        sku: 'LIB-CUA-001',
+        name: 'Cuaderno universitario',
+        description: '100 hojas',
+        categoryName: 'Cuadernos',
+        price: 2490,
+        costPrice: 1400,
+        stock: 45,
+        minStock: 15,
+      },
+      {
+        sku: 'LIB-ESC-001',
+        name: 'Set marcadores x12',
+        description: 'Punta fina',
+        categoryName: 'Escritura',
+        price: 5990,
+        costPrice: 3400,
+        stock: 20,
+        minStock: 8,
+      },
+      {
+        sku: 'LIB-OFI-001',
+        name: 'Resma papel carta',
+        description: '500 hojas',
+        categoryName: 'Oficina',
+        price: 6990,
+        costPrice: 4300,
+        stock: 14,
+        minStock: 6,
+      },
+    ],
+    customers: [
+      { name: 'Daniela Torres', email: 'daniela.bookstore@demo.local', phone: '+56990000777', address: 'Lago 45' },
+      { name: 'Ignacio Morales', email: 'ignacio.bookstore@demo.local', phone: '+56990000888', address: 'Cordillera 81' },
+    ],
+  },
+};
 
-  console.log('✅ Products created:', products.length);
+function getModulePrefix(moduleType: ModuleType) {
+  return moduleType.substring(0, 3);
+}
 
-  // Create a sample customer
-  const customer = await prisma.customer.create({
-    data: {
-      name: 'Cliente Genérico',
-      email: 'cliente@example.com',
-      phone: '+56987654321',
-      branchId: branch.id,
-      loyaltyPoints: 0,
-      totalPurchases: 0,
-    },
+function getDefaultAdminEmail(moduleType: ModuleType) {
+  if (moduleType === ModuleType.MINIMARKET) return 'admin@martinpos.com';
+  return `admin.${moduleType.toLowerCase()}@martinpos.com`;
+}
+
+async function ensureBranch(moduleType: Exclude<ModuleType, 'ALL'>) {
+  const blueprint = blueprints[moduleType];
+  const existing = await prisma.branch.findFirst({
+    where: { email: blueprint.branchEmail, deletedAt: null },
   });
 
-  console.log('✅ Customer created:', customer.name);
-
-  // Create tables for restaurant module
-  if (branch.moduleType === ModuleType.RESTAURANT || branch.moduleType === ModuleType.ALL) {
-    const tables = await Promise.all(
-      Array.from({ length: 10 }, (_, i) =>
-        prisma.table.create({
-          data: {
-            number: `${i + 1}`,
-            capacity: Math.floor(Math.random() * 4) + 2, // 2-6 people
-            branchId: branch.id,
-          },
-        })
-      )
-    );
-    console.log('✅ Tables created:', tables.length);
+  if (existing) {
+    return prisma.branch.update({
+      where: { id: existing.id },
+      data: {
+        name: blueprint.branchName,
+        moduleType,
+        config: {
+          currency: 'CLP',
+          timezone: 'America/Santiago',
+          taxRate: 0.19,
+          seededAt: new Date().toISOString(),
+          moduleType,
+        },
+      },
+    });
   }
 
-  // ============ EXTENDED FEATURES DEMO DATA ============
-
-  // 1. Loyalty Program
-  const loyaltyProgram = await prisma.loyaltyProgram.create({
+  return prisma.branch.create({
     data: {
-      name: 'Programa VIP Martin POS',
-      description: 'Gana puntos por cada compra',
-      pointsPerDollar: 10,
-      dollarPerPoint: 0.01,
-      minPointsToRedeem: 100,
-      isActive: true,
-      branchId: branch.id,
-    },
-  });
-
-  // Add loyalty points to customer
-  await prisma.loyaltyTransaction.create({
-    data: {
-      customerId: customer.id,
-      programId: loyaltyProgram.id,
-      points: 500,
-      type: 'EARNED',
-      description: 'Bono de bienvenida',
-      balanceAfter: 500,
-    },
-  });
-
-  await prisma.customer.update({
-    where: { id: customer.id },
-    data: { loyaltyPoints: 500 },
-  });
-
-  console.log('✅ Loyalty program created');
-
-  // 2. Employees with shifts and commissions
-  const cashier = await prisma.user.create({
-    data: {
-      email: 'cajero@martinpos.com',
-      password: hashedPassword,
-      firstName: 'Juan',
-      lastName: 'Pérez',
-      role: UserRole.CASHIER,
-      isActive: true,
-      branchId: branch.id,
-    },
-  });
-
-  const shift = await prisma.employeeShift.create({
-    data: {
-      userId: cashier.id,
-      startTime: new Date(Date.now() - 8 * 60 * 60 * 1000), // 8 hours ago
-      endTime: new Date(),
-      hoursWorked: 8,
-    },
-  });
-
-  console.log('✅ Employees and shifts created');
-
-  // 3. Second branch for transfers
-  const secondBranch = await prisma.branch.create({
-    data: {
-      name: 'Sucursal Norte',
-      address: 'Av. Norte 456',
-      phone: '+56923456789',
-      email: 'norte@martinpos.com',
-      moduleType: ModuleType.ALL,
-      isActive: true,
+      name: blueprint.branchName,
+      address: 'Demo Street 123',
+      phone: '+56911111111',
+      email: blueprint.branchEmail,
+      moduleType,
       config: {
         currency: 'CLP',
         timezone: 'America/Santiago',
         taxRate: 0.19,
+        seededAt: new Date().toISOString(),
+        moduleType,
       },
     },
   });
+}
 
-  // Create transfer between branches
-  const transfer = await prisma.inventoryTransfer.create({
-    data: {
-      transferNumber: 'TRF-000001',
-      status: 'PENDING',
-      fromBranchId: branch.id,
-      toBranchId: secondBranch.id,
-      createdById: admin.id,
-      notes: 'Transferencia inicial de productos',
-      items: {
-        create: [
-          {
-            productId: products[0].id,
-            quantity: 10,
-          },
-        ],
+async function ensureAdmin(branchId: string, moduleType: ModuleType, passwordHash: string) {
+  const email = getDefaultAdminEmail(moduleType);
+  const existing = await prisma.user.findUnique({ where: { email } });
+
+  if (existing) {
+    return prisma.user.update({
+      where: { email },
+      data: {
+        password: passwordHash,
+        firstName: 'Admin',
+        lastName: moduleType === ModuleType.MINIMARKET ? 'Principal' : moduleType,
+        role: UserRole.SUPER_ADMIN,
+        isActive: true,
+        branchId,
       },
-    },
-  });
+    });
+  }
 
-  console.log('✅ Branches and transfers created');
-
-  // 4. Promotions
-  const promotion = await prisma.promotion.create({
+  return prisma.user.create({
     data: {
-      name: '2x1 en Bebidas',
-      description: 'Compra 2 bebidas y paga 1',
-      type: 'BUY_X_GET_Y',
-      discountType: 'PERCENTAGE',
-      discountValue: 50,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      email,
+      password: passwordHash,
+      firstName: 'Admin',
+      lastName: moduleType === ModuleType.MINIMARKET ? 'Principal' : moduleType,
+      role: UserRole.SUPER_ADMIN,
       isActive: true,
-      branchId: branch.id,
-      conditions: {
-        minQuantity: 2,
-        applicableCategories: [categories[2].id],
-      },
+      branchId,
     },
   });
+}
 
-  const combo = await prisma.promotion.create({
-    data: {
-      name: 'Combo Desayuno',
-      description: 'Leche + Pan a precio especial',
-      type: 'COMBO',
-      discountType: 'FIXED',
-      discountValue: 500,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 days
-      isActive: true,
-      branchId: branch.id,
-      comboProducts: {
-        create: [
-          {
-            productId: products[3].id, // Leche
-            quantity: 1,
+async function seedModuleData(branchId: string, userId: string, moduleType: Exclude<ModuleType, 'ALL'>) {
+  const blueprint = blueprints[moduleType];
+  const categoryIds = new Map<string, string>();
+  const products: { id: string; price: number; stock: number; minStock: number }[] = [];
+
+  for (const category of blueprint.categories) {
+    const existing = await prisma.category.findFirst({
+      where: { branchId, name: category.name, deletedAt: null },
+    });
+
+    const saved = existing
+      ? await prisma.category.update({
+          where: { id: existing.id },
+          data: { description: category.description },
+        })
+      : await prisma.category.create({
+          data: {
+            branchId,
+            name: category.name,
+            description: category.description,
           },
-        ],
-      },
-    },
-  });
+        });
 
-  console.log('✅ Promotions created');
+    categoryIds.set(category.name, saved.id);
+  }
 
-  // 5. Sample sale with invoice
-  const sale = await prisma.sale.create({
-    data: {
-      saleNumber: 'VTA-000001',
-      subtotal: 3300,
-      tax: 627,
-      discount: 0,
-      total: 3927,
-      status: 'COMPLETED',
-      paymentMethod: 'CASH',
-      branchId: branch.id,
-      userId: cashier.id,
-      customerId: customer.id,
-      items: {
-        create: [
-          {
-            productId: products[0].id,
-            quantity: 1,
-            price: 1500,
-            subtotal: 1500,
-            tax: 285,
-            total: 1785,
-          },
-          {
-            productId: products[2].id,
-            quantity: 1,
-            price: 1800,
-            subtotal: 1800,
-            tax: 342,
-            total: 2142,
-          },
-        ],
-      },
-    },
-  });
-
-  // Create invoice for the sale
-  const invoice = await prisma.invoice.create({
-    data: {
-      invoiceNumber: 'FAC-000001',
-      type: 'INVOICE',
-      status: 'ISSUED',
-      issuedAt: new Date(),
-      saleId: sale.id,
-      customerId: customer.id,
-      branchId: branch.id,
-      subtotal: 3300,
-      tax: 627,
-      total: 3927,
-      items: {
-        create: [
-          {
-            description: 'Arroz Grado 1 - 1kg',
-            quantity: 1,
-            unitPrice: 1500,
-            subtotal: 1500,
-            tax: 285,
-            total: 1785,
-          },
-          {
-            description: 'Coca Cola 1.5L',
-            quantity: 1,
-            unitPrice: 1800,
-            subtotal: 1800,
-            tax: 342,
-            total: 2142,
-          },
-        ],
-      },
-    },
-  });
-
-  // Create commission for the sale
-  await prisma.commission.create({
-    data: {
-      userId: cashier.id,
-      saleId: sale.id,
-      baseSaleAmount: 3927,
-      percentage: 3,
-      amount: 117.81,
-      status: 'PENDING',
-    },
-  });
-
-  console.log('✅ Sale and invoice created');
-
-  // 6. Layaway (Apartado)
-  const layaway = await prisma.layaway.create({
-    data: {
-      layawayNumber: 'APT-000001',
-      customerId: customer.id,
-      branchId: branch.id,
-      totalAmount: 5000,
-      paidAmount: 2000,
-      remainingAmount: 3000,
-      status: 'ACTIVE',
-      dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // 15 days
-      items: {
-        create: [
-          {
-            productId: products[0].id,
-            quantity: 3,
-            price: 1500,
-            subtotal: 4500,
-          },
-        ],
-      },
-      payments: {
-        create: [
-          {
-            amount: 2000,
-            paymentMethod: 'CASH',
-            userId: cashier.id,
-          },
-        ],
-      },
-    },
-  });
-
-  console.log('✅ Layaway created');
-
-  // 7. Delivery Order
-  const deliveryOrder = await prisma.deliveryOrder.create({
-    data: {
-      saleId: sale.id,
-      provider: 'UBER_EATS',
-      status: 'PENDING',
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      deliveryAddress: 'Calle Ejemplo 789, Depto 12',
-      deliveryFee: 2500,
-      estimatedDeliveryTime: new Date(Date.now() + 45 * 60 * 1000), // 45 minutes
-    },
-  });
-
-  console.log('✅ Delivery order created');
-
-  // 8. Fraud Alert (demo)
-  const fraudAlert = await prisma.fraudAlert.create({
-    data: {
-      type: 'UNUSUAL_AMOUNT',
-      severity: 'MEDIUM',
-      description: 'Venta con monto inusualmente alto detectada',
-      saleId: sale.id,
-      status: 'PENDING',
-      detectedAt: new Date(),
-    },
-  });
-
-  console.log('✅ Fraud alert created');
-
-  // 9. AI Records
-  const ocrDoc = await prisma.aIOCRDocument.create({
-    data: {
-      imageUrl: 'https://example.com/invoice.jpg',
-      documentType: 'SUPPLIER_INVOICE',
-      extractedData: {
-        supplier: 'Proveedor Demo',
-        total: 50000,
-        items: [
-          { name: 'Producto 1', quantity: 10, price: 5000 },
-        ],
-      },
-      confidence: 0.95,
-      userId: admin.id,
-      verified: false,
-    },
-  });
-
-  const voiceCommand = await prisma.aIVoiceCommand.create({
-    data: {
-      transcript: 'Agregar dos coca colas a la venta',
-      intent: 'ADD_TO_SALE',
-      entities: {
-        product: 'coca cola',
-        quantity: 2,
-      },
-      confidence: 0.92,
-      userId: cashier.id,
-      executed: true,
-    },
-  });
-
-  const productRecog = await prisma.aIProductRecognition.create({
-    data: {
-      imageUrl: 'https://example.com/product.jpg',
-      recognizedProductId: products[2].id,
-      confidence: 0.88,
-      userId: cashier.id,
-      verified: true,
-    },
-  });
-
-  console.log('✅ AI records created');
-
-  // 10. Consignment
-  const consignment = await prisma.consignment.create({
-    data: {
-      consignmentNumber: 'CONS-000001',
-      supplierName: 'Artesanías Don José',
-      supplierContact: '+56911223344',
-      commissionRate: 20,
-      status: 'ACTIVE',
-      branchId: branch.id,
-      items: {
-        create: [
-          {
-            productId: products[0].id,
-            quantity: 5,
-            quantitySold: 2,
-            unitPrice: 1500,
-          },
-        ],
-      },
-    },
-  });
-
-  console.log('✅ Consignment created');
-
-  // 11. Payment Gateway Transaction
-  const gatewayTx = await prisma.paymentGatewayTransaction.create({
-    data: {
-      saleId: sale.id,
-      gateway: 'MERCADO_PAGO',
-      transactionId: 'MP-123456789',
-      amount: 3927,
-      currency: 'CLP',
-      status: 'APPROVED',
-      paymentMethod: 'CREDIT_CARD',
-      response: {
-        status: 'approved',
-        status_detail: 'accredited',
-      },
-    },
-  });
-
-  console.log('✅ Payment gateway transaction created');
-
-  // 12. Hardware Integration
-  const scale = await prisma.scale.create({
-    data: {
-      name: 'Balanza Principal',
-      brand: 'Systel',
-      model: 'Croma',
-      serialPort: '/dev/ttyUSB0',
-      baudRate: 9600,
-      isActive: true,
-      branchId: branch.id,
-    },
-  });
-
-  const tempLog = await prisma.temperatureLog.create({
-    data: {
-      productId: products[1].id, // Manzanas
-      temperature: 4.5,
-      humidity: 65,
-      location: 'Cámara frigorífica principal',
-      branchId: branch.id,
-    },
-  });
-
-  console.log('✅ Hardware records created');
-
-  // 13. Customer preferences (AI learning)
-  await prisma.customerPreference.create({
-    data: {
-      customerId: customer.id,
-      productId: products[2].id, // Coca Cola
-      frequency: 15,
-      lastPurchase: new Date(),
-      averageQuantity: 2,
-      preferredDayOfWeek: 5, // Friday
-      preferredTimeOfDay: 18, // 6 PM
-    },
-  });
-
-  console.log('✅ Customer preferences created');
-
-  // ============ BOTILLERÍA MODULE DEMO DATA ============
-
-  // Create Botillería branch
-  const botilleriaBranch = await prisma.branch.create({
-    data: {
-      name: 'Botillería Don Vino',
-      address: 'Av. Providencia 1234',
-      phone: '+56934567890',
-      email: 'botilleria@martinpos.com',
-      moduleType: 'BOTILLERIA' as any,
-      isActive: true,
-      config: {
-        currency: 'CLP',
-        timezone: 'America/Santiago',
-        taxRate: 0.19,
-        alcoholSalesRestriction: true,
-      },
-    },
-  });
-
-  // Create Botillería category
-  const botilleriaCategory = await prisma.category.create({
-    data: {
-      name: 'Vinos Tintos',
-      description: 'Vinos tintos de distintas cepas',
-      icon: '🍷',
-      color: '#722F37',
-      branchId: botilleriaBranch.id,
-    },
-  });
-
-  // Create wine product
-  const wineProduct = await prisma.product.create({
-    data: {
-      sku: 'VIN-000001',
-      barcode: '7800999888777',
-      name: 'Casillero del Diablo Cabernet Sauvignon',
-      description: 'Vino tinto chileno de Concha y Toro',
-      price: 6990,
-      costPrice: 4500,
-      stock: 24,
-      minStock: 6,
-      maxStock: 48,
+  for (const product of blueprint.products) {
+    const expirationDate = product.expirationDays
+      ? new Date(Date.now() + product.expirationDays * 24 * 60 * 60 * 1000)
+      : null;
+    const payload = {
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      costPrice: product.costPrice,
+      stock: product.stock,
+      minStock: product.minStock,
       unit: 'UN',
-      categoryId: botilleriaCategory.id,
-      branchId: botilleriaBranch.id,
-      isPerishable: false,
+      status: 'ACTIVE' as const,
+      isPerishable: !!product.expirationDays,
+      expirationDate,
       taxable: true,
       taxRate: 0.19,
-    },
-  });
+      branchId,
+      categoryId: categoryIds.get(product.categoryName)!,
+    };
 
-  // Create alcoholic product details
-  await prisma.alcoholicProduct.create({
-    data: {
-      productId: wineProduct.id,
-      alcoholContent: 13.5,
-      category: 'WINE_RED',
-      vintage: 2022,
-      origin: 'Chile - Valle Central',
-      winery: 'Concha y Toro',
-      grapeVariety: 'Cabernet Sauvignon',
-      servingTemperature: '16-18°C',
-      pairings: 'Carnes rojas, pastas, quesos maduros',
-      tastingNotes: 'Color rubí intenso, aromas a frutos rojos y notas de vainilla',
-      rating: 4.2,
-      taxCategory: 'STANDARD',
-      volume: 750,
-      container: 'BOTTLE',
-      isReturnable: true,
-      depositAmount: 500,
-    },
-  });
+    const existing = await prisma.product.findUnique({ where: { sku: product.sku } });
+    const saved = existing
+      ? await prisma.product.update({ where: { sku: product.sku }, data: payload })
+      : await prisma.product.create({ data: { sku: product.sku, ...payload } });
 
-  // Create beer product
-  const beerProduct = await prisma.product.create({
-    data: {
-      sku: 'CER-000001',
-      barcode: '7800111222333',
-      name: 'Kunstmann Lager',
-      description: 'Cerveza artesanal tipo Lager',
-      price: 1990,
-      costPrice: 1200,
-      stock: 48,
-      minStock: 12,
-      maxStock: 96,
-      unit: 'UN',
-      categoryId: botilleriaCategory.id,
-      branchId: botilleriaBranch.id,
-      isPerishable: true,
-      expirationDate: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000),
-      taxable: true,
-      taxRate: 0.19,
-    },
-  });
+    products.push({
+      id: saved.id,
+      price: Number(saved.price),
+      stock: Number(saved.stock),
+      minStock: Number(saved.minStock),
+    });
+  }
 
-  await prisma.alcoholicProduct.create({
-    data: {
-      productId: beerProduct.id,
-      alcoholContent: 5.0,
-      category: 'BEER_CRAFT',
-      origin: 'Chile - Valdivia',
-      winery: 'Cervecería Kunstmann',
-      servingTemperature: '4-6°C',
-      pairings: 'Pizza, hamburguesas, comida alemana',
-      rating: 4.5,
-      taxCategory: 'STANDARD',
-      volume: 500,
-      container: 'BOTTLE',
-      isReturnable: true,
-      depositAmount: 300,
-    },
-  });
+  for (const customer of blueprint.customers) {
+    const existing = await prisma.customer.findFirst({
+      where: { branchId, email: customer.email, deletedAt: null },
+    });
+    if (!existing) {
+      await prisma.customer.create({
+        data: {
+          branchId,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          address: customer.address,
+        },
+      });
+    }
+  }
 
-  // Create spirits product
-  const piscoProduct = await prisma.product.create({
-    data: {
-      sku: 'PIS-000001',
-      barcode: '7800444555666',
-      name: 'Pisco Control Gran Reservado',
-      description: 'Pisco chileno 40°',
-      price: 12990,
-      costPrice: 8500,
-      stock: 12,
-      minStock: 3,
-      maxStock: 24,
-      unit: 'UN',
-      categoryId: botilleriaCategory.id,
-      branchId: botilleriaBranch.id,
-      isPerishable: false,
-      taxable: true,
-      taxRate: 0.19,
-    },
-  });
+  const paymentMethods: PaymentMethod[] = [PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.TRANSFER, PaymentMethod.QR];
+  for (let i = 0; i < 8; i += 1) {
+    const day = new Date();
+    day.setDate(day.getDate() - (i % 4));
+    day.setHours(11 + i, 5, 0, 0);
 
-  await prisma.alcoholicProduct.create({
-    data: {
-      productId: piscoProduct.id,
-      alcoholContent: 40.0,
-      category: 'SPIRITS_PISCO',
-      origin: 'Chile - Valle del Elqui',
-      winery: 'Control',
-      servingTemperature: 'Ambiente o con hielo',
-      pairings: 'Pisco sour, cócteles',
-      rating: 4.3,
-      taxCategory: 'HIGH', // 31.5% ILA for spirits
-      volume: 700,
-      container: 'BOTTLE',
-      isReturnable: false,
-    },
-  });
+    const saleNumber = `${getModulePrefix(moduleType)}-${day.toISOString().slice(0, 10).replace(/-/g, '')}-${String(i + 1).padStart(3, '0')}`;
+    const existing = await prisma.sale.findFirst({ where: { saleNumber, branchId } });
+    if (existing) continue;
 
-  // Sale hours restriction
-  await prisma.saleHoursRestriction.createMany({
-    data: [
-      { branchId: botilleriaBranch.id, dayOfWeek: 0, openTime: '09:00', closeTime: '23:00' }, // Sunday
-      { branchId: botilleriaBranch.id, dayOfWeek: 1, openTime: '09:00', closeTime: '23:00' }, // Monday
-      { branchId: botilleriaBranch.id, dayOfWeek: 2, openTime: '09:00', closeTime: '23:00' }, // Tuesday
-      { branchId: botilleriaBranch.id, dayOfWeek: 3, openTime: '09:00', closeTime: '23:00' }, // Wednesday
-      { branchId: botilleriaBranch.id, dayOfWeek: 4, openTime: '09:00', closeTime: '23:00' }, // Thursday
-      { branchId: botilleriaBranch.id, dayOfWeek: 5, openTime: '09:00', closeTime: '00:00' }, // Friday
-      { branchId: botilleriaBranch.id, dayOfWeek: 6, openTime: '09:00', closeTime: '00:00' }, // Saturday
-    ],
-  });
+    const p1 = products[i % products.length];
+    const p2 = products[(i + 1) % products.length];
+    const q1 = 1 + (i % 2);
+    const q2 = 1 + ((i + 1) % 3);
+    const subtotal = q1 * p1.price + q2 * p2.price;
+    const tax = Math.round(subtotal * 0.19);
+    const total = subtotal + tax;
 
-  // Wine tasting event
-  const tastingEvent = await prisma.tastingEvent.create({
-    data: {
-      name: 'Cata de Vinos del Valle Central',
-      description: 'Degustación de 5 vinos premium del Valle Central de Chile',
-      eventDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 2 weeks from now
-      capacity: 20,
-      pricePerPerson: 25000,
-      status: 'OPEN_REGISTRATION',
-      branchId: botilleriaBranch.id,
-      products: {
-        create: [{ productId: wineProduct.id, servingSize: '50ml' }],
+    const sale = await prisma.sale.create({
+      data: {
+        saleNumber,
+        status: 'COMPLETED',
+        subtotal,
+        tax,
+        discount: 0,
+        total,
+        paymentMethod: paymentMethods[i % paymentMethods.length],
+        branchId,
+        userId,
+        createdAt: day,
+        updatedAt: day,
+        items: {
+          create: [
+            {
+              productId: p1.id,
+              quantity: q1,
+              unitPrice: p1.price,
+              subtotal: q1 * p1.price,
+              tax: Math.round(q1 * p1.price * 0.19),
+              discount: 0,
+              total: Math.round(q1 * p1.price * 1.19),
+            },
+            {
+              productId: p2.id,
+              quantity: q2,
+              unitPrice: p2.price,
+              subtotal: q2 * p2.price,
+              tax: Math.round(q2 * p2.price * 0.19),
+              discount: 0,
+              total: Math.round(q2 * p2.price * 1.19),
+            },
+          ],
+        },
       },
-    },
+      include: { items: true },
+    });
+
+    for (const item of sale.items) {
+      const product = products.find((x) => x.id === item.productId);
+      if (!product) continue;
+      const previousStock = product.stock;
+      const newStock = Math.max(0, previousStock - Number(item.quantity));
+
+      await prisma.stockMovement.create({
+        data: {
+          type: 'SALE',
+          quantity: item.quantity,
+          previousStock,
+          newStock,
+          reason: 'Seed demo',
+          referenceId: sale.id,
+          inputMethod: 'MANUAL',
+          productId: product.id,
+          branchId,
+          userId,
+          createdAt: sale.createdAt,
+          updatedAt: sale.createdAt,
+        },
+      });
+
+      await prisma.product.update({
+        where: { id: product.id },
+        data: {
+          stock: newStock,
+          status: newStock === 0 ? 'OUT_OF_STOCK' : 'ACTIVE',
+        },
+      });
+      product.stock = newStock;
+    }
+  }
+
+  const lowStockProducts = await prisma.product.findMany({
+    where: { branchId, deletedAt: null, status: 'ACTIVE' },
+    select: { id: true, name: true, stock: true, minStock: true },
   });
 
-  // Wine club subscription
-  await prisma.wineClubSubscription.create({
-    data: {
-      customerId: customer.id,
-      planType: 'PREMIUM',
-      status: 'ACTIVE',
-      monthlyAmount: 45000,
-      bottlesPerMonth: 3,
-      preferredCategories: JSON.stringify(['WINE_RED', 'WINE_WHITE']),
-      nextDeliveryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      branchId: botilleriaBranch.id,
-    },
-  });
+  for (const product of lowStockProducts.filter((p) => Number(p.stock) <= Number(p.minStock))) {
+    const existingAlert = await prisma.inventoryAlert.findFirst({
+      where: { branchId, productId: product.id, type: 'LOW_STOCK', isRead: false },
+    });
+    if (!existingAlert) {
+      await prisma.inventoryAlert.create({
+        data: {
+          branchId,
+          productId: product.id,
+          type: 'LOW_STOCK',
+          message: `Stock bajo para ${product.name}`,
+          priority: 'HIGH',
+          isRead: false,
+        },
+      });
+    }
+  }
 
-  console.log('✅ Botillería module data created');
+  if (moduleType === ModuleType.RESTAURANT && blueprint.tables?.length) {
+    const tableIds: string[] = [];
+    for (const table of blueprint.tables) {
+      const existing = await prisma.table.findFirst({
+        where: { branchId, number: table.number, deletedAt: null },
+      });
+      const saved = existing
+        ? await prisma.table.update({
+            where: { id: existing.id },
+            data: { capacity: table.capacity, status: table.status },
+          })
+        : await prisma.table.create({
+            data: {
+              branchId,
+              number: table.number,
+              capacity: table.capacity,
+              status: table.status,
+            },
+          });
+      tableIds.push(saved.id);
+    }
 
-  // ============ TRANSBANK INTEGRATION DEMO DATA ============
-
-  // Transbank config for main branch
-  const tbkConfig = await prisma.transbankConfig.create({
-    data: {
-      branchId: branch.id,
-      environment: 'integration',
-      commerceCode: '597055555532',
-      apiKey: '579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C',
-      isWebpayEnabled: true,
-      isOneclickEnabled: false,
-      isPOSEnabled: true,
-    },
-  });
-
-  // Sample Transbank transaction
-  await prisma.transbankTransaction.create({
-    data: {
-      saleId: sale.id,
-      buyOrder: `MPOS-DEMO-${Date.now()}`,
-      sessionId: `SES-${sale.id}`,
-      amount: 3927,
-      status: 'AUTHORIZED',
-      token: `TBK-DEMO-${Date.now()}`,
-      responseCode: 0,
-      authorizationCode: '123456',
-      cardNumber: '6623',
-      cardType: 'CREDIT',
-      installmentsNumber: 0,
-      environment: 'integration',
-      completedAt: new Date(),
-    },
-  });
-
-  // ============ PHYSICAL POS TERMINAL DEMO DATA ============
-
-  // POS Terminal 1 - Main cashier
-  const posTerminal1 = await prisma.pOSTerminal.create({
-    data: {
-      terminalId: 'TBK-POS-001',
-      serialNumber: 'VX520-123456',
-      model: 'Verifone VX520',
-      name: 'Caja Principal',
-      location: 'Entrada principal',
-      connectionType: 'USB',
-      port: '/dev/ttyUSB0',
-      status: 'CONNECTED',
-      branchId: branch.id,
-      configId: tbkConfig.id,
-      isActive: true,
-      lastPingAt: new Date(),
-    },
-  });
-
-  // POS Terminal 2 - Secondary cashier
-  const posTerminal2 = await prisma.pOSTerminal.create({
-    data: {
-      terminalId: 'TBK-POS-002',
-      serialNumber: 'VX680-789012',
-      model: 'Verifone VX680',
-      name: 'Caja Secundaria',
-      location: 'Sector bebidas',
-      connectionType: 'WIFI',
-      ipAddress: '192.168.1.101',
-      status: 'DISCONNECTED',
-      branchId: branch.id,
-      configId: tbkConfig.id,
-      isActive: true,
-    },
-  });
-
-  // Sample POS Transaction
-  await prisma.pOSTransaction.create({
-    data: {
-      saleId: sale.id,
-      terminalId: posTerminal1.id,
-      operationCode: '0200', // Sale
-      amount: 3927,
-      tip: 500,
-      totalAmount: 4427,
-      installments: 0,
-      status: 'APPROVED',
-      authorizationCode: 'A1B2C3',
-      responseCode: 0,
-      responseMessage: 'Aprobado',
-      cardNumber: '****6623',
-      cardType: 'VISA',
-      cardBrand: 'CREDIT',
-      voucherNumber: 'V-001234',
-      commerceCode: '597055555532',
-      terminalCode: 'TBK-POS-001',
-      transactionDate: new Date(),
-      transactionTime: new Date().toTimeString().split(' ')[0],
-      printData: `
-═══════════════════════════════
-      COMPROBANTE DE VENTA
-        TRANSBANK POS
-═══════════════════════════════
-Fecha: ${new Date().toLocaleDateString('es-CL')}
-Hora: ${new Date().toLocaleTimeString('es-CL')}
-
-Tarjeta: VISA
-Número: ****6623
-
-Monto:    $3,927
-Propina:  $500
-────────────────────────────────
-TOTAL:    $4,427
-
-Estado: APROBADO
-═══════════════════════════════
-      `.trim(),
-      completedAt: new Date(),
-    },
-  });
-
-  // Create POS Batch
-  await prisma.pOSBatch.create({
-    data: {
-      branchId: branch.id,
-      terminalId: posTerminal1.id,
-      batchNumber: 1,
-      status: 'OPEN',
-      totalTransactions: 1,
-      totalSales: 1,
-      totalVoids: 0,
-      totalAmount: 4427,
-      totalTips: 500,
-      creditAmount: 4427,
-      creditCount: 1,
-      debitAmount: 0,
-      debitCount: 0,
-    },
-  });
-
-  console.log('✅ Transbank integration data created');
-  console.log('✅ Physical POS terminal data created');
-
-  // ============ SII ELECTRONIC INVOICING DEMO DATA ============
-
-  // SII config for main branch
-  await prisma.sIIConfig.create({
-    data: {
-      branchId: branch.id,
-      rutEmisor: '76.XXX.XXX-X',
-      razonSocial: 'Martin POS SpA',
-      giroEmisor: 'Venta al por menor de alimentos y bebidas',
-      direccionOrigen: 'Av. Principal 123',
-      comunaOrigen: 'Santiago',
-      ciudadOrigen: 'Santiago',
-      environment: 'certificacion',
-      isActive: true,
-      folioBoletaInicio: 1,
-      folioBoletaActual: 1,
-      folioBoletaFin: 1000,
-      folioFacturaInicio: 1,
-      folioFacturaActual: 1,
-      folioFacturaFin: 500,
-    },
-  });
-
-  // Sample DTE (Boleta)
-  const dteBoleta = await prisma.dTEDocument.create({
-    data: {
-      branchId: branch.id,
-      saleId: sale.id,
-      tipoDTE: 39, // Boleta
-      folio: 1,
-      rutEmisor: '76.XXX.XXX-X',
-      razonSocialEmisor: 'Martin POS SpA',
-      montoNeto: 3300,
-      montoExento: 0,
-      tasaIVA: 19,
-      iva: 627,
-      montoTotal: 3927,
-      status: 'ACCEPTED',
-      fechaEmision: new Date(),
-      acceptedBySIIAt: new Date(),
-      items: {
-        create: [
-          {
-            numeroLinea: 1,
-            nombreItem: 'Arroz Grado 1 - 1kg',
-            cantidad: 1,
-            precioUnitario: 1500,
-            montoItem: 1500,
+    for (let i = 0; i < 4; i += 1) {
+      const orderNumber = `RES-ORD-${String(i + 1).padStart(3, '0')}`;
+      const existing = await prisma.order.findFirst({ where: { branchId, orderNumber } });
+      if (existing) continue;
+      const product = products[i % products.length];
+      await prisma.order.create({
+        data: {
+          orderNumber,
+          branchId,
+          tableId: tableIds[i % tableIds.length],
+          waiterId: userId,
+          status: ['PENDING', 'PREPARING', 'READY'][i % 3] as any,
+          items: {
+            create: [
+              {
+                productId: product.id,
+                quantity: 1 + (i % 2),
+                status: 'PENDING',
+              },
+            ],
           },
-          {
-            numeroLinea: 2,
-            nombreItem: 'Coca Cola 1.5L',
-            cantidad: 1,
-            precioUnitario: 1800,
-            montoItem: 1800,
-          },
-        ],
-      },
-    },
-  });
+        },
+      });
+    }
+  }
+}
 
-  // DTE Log
-  await prisma.dTELog.create({
-    data: {
-      dteId: dteBoleta.id,
-      action: 'ACCEPTED',
-      status: 'SUCCESS',
-      message: 'Boleta aceptada por SII',
-    },
-  });
+async function main() {
+  const modules: Exclude<ModuleType, 'ALL'>[] = [
+    ModuleType.RESTAURANT,
+    ModuleType.MINIMARKET,
+    ModuleType.BOTILLERIA,
+    ModuleType.BOOKSTORE,
+  ];
 
-  console.log('✅ SII electronic invoicing data created');
+  for (const moduleType of modules) {
+    const branch = await ensureBranch(moduleType);
+    const user = await ensureAdmin(branch.id, moduleType, ADMIN_PASSWORD_HASH);
+    await seedModuleData(branch.id, user.id, moduleType);
+    console.log(`Seed module ${moduleType}: ${branch.name} (${user.email})`);
+  }
 
-  console.log('');
-  console.log('🎉 Seed completed successfully!');
-  console.log('');
-  console.log('📊 DEMO DATA SUMMARY:');
-  console.log('  - 3 Branches (Principal + Norte + Botillería)');
-  console.log('  - 2 Users (Admin + Cajero)');
-  console.log('  - 5 Categories');
-  console.log('  - 7 Products (4 general + 3 alcohol)');
-  console.log('  - 1 Customer with loyalty points');
-  console.log('  - 1 Loyalty Program');
-  console.log('  - 1 Employee shift');
-  console.log('  - 1 Inventory transfer');
-  console.log('  - 2 Promotions (2x1 + Combo)');
-  console.log('  - 1 Sale with invoice');
-  console.log('  - 1 Layaway/Apartado');
-  console.log('  - 1 Delivery order');
-  console.log('  - 1 Fraud alert');
-  console.log('  - 3 AI records (OCR, Voice, Recognition)');
-  console.log('  - 1 Consignment');
-  console.log('  - 1 Payment gateway transaction');
-  console.log('  - 1 Scale + 1 Temperature log');
-  console.log('');
-  console.log('🍷 BOTILLERÍA:');
-  console.log('  - 3 Alcoholic products (Wine, Beer, Pisco)');
-  console.log('  - 7 Sale hours restrictions');
-  console.log('  - 1 Tasting event');
-  console.log('  - 1 Wine club subscription');
-  console.log('');
-  console.log('💳 TRANSBANK:');
-  console.log('  - 1 Transbank configuration (integration)');
-  console.log('  - 1 Sample Webpay transaction');
-  console.log('');
-  console.log('📄 SII (Facturación Electrónica):');
-  console.log('  - 1 SII configuration');
-  console.log('  - 1 Sample DTE (Boleta)');
-  console.log('');
-  console.log('🔐 LOGIN CREDENTIALS:');
-  console.log('  Admin:   admin@martinpos.com / admin123');
-  console.log('  Cashier: cajero@martinpos.com / admin123');
-  console.log('');
+  console.log('Seed completed successfully');
+  console.log('Main admin: admin@martinpos.com / admin123');
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ Seed error:', e);
+  .catch((error) => {
+    console.error('Seed failed:', error);
     process.exit(1);
   })
   .finally(async () => {

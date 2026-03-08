@@ -6,20 +6,14 @@ RUN npm install -g pnpm@8.15.0
 
 WORKDIR /app
 
-# Copy workspace config and package files
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/database/package.json ./packages/database/
-COPY packages/backend/package.json ./packages/backend/
-
-# Install dependencies (use --no-frozen-lockfile as fallback when no lockfile exists)
-RUN pnpm install --frozen-lockfile || pnpm install
-
-# Copy source code
+# Copy workspace config and source code
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* turbo.json ./
 COPY packages/shared ./packages/shared
 COPY packages/database ./packages/database
 COPY packages/backend ./packages/backend
-COPY turbo.json ./
+
+# Install dependencies after source copy to avoid overwriting pnpm workspace links
+RUN pnpm install --frozen-lockfile || pnpm install
 
 # Build shared, generate prisma, build backend
 RUN pnpm --filter @martin-pos/shared build
@@ -42,7 +36,7 @@ EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD node -e "const http=require('http');http.get('http://localhost:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1));"
+  CMD node -e "const http=require('http');http.get('http://localhost:3001/api/v1/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1));"
 
-# Run migrations and start
-CMD ["sh", "-c", "npx prisma migrate deploy --schema=../database/prisma/schema.prisma 2>/dev/null; node dist/main.js"]
+# Run migrations (with retries) and start
+CMD ["sh", "-c", "set -e; SCHEMA=/app/packages/database/prisma/schema.prisma; PRISMA=/app/packages/database/node_modules/.bin/prisma; ATTEMPTS=0; until $PRISMA migrate deploy --schema=$SCHEMA; do ATTEMPTS=$((ATTEMPTS+1)); if [ $ATTEMPTS -ge 5 ]; then echo 'Migration deploy failed after retries. Running prisma db push fallback...'; $PRISMA db push --schema=$SCHEMA --skip-generate; break; fi; echo \"Migration failed. Retry $ATTEMPTS/5 in 3s...\"; sleep 3; done; node dist/main.js"]

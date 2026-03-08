@@ -31,7 +31,7 @@ export class ReportsService {
       where: { id: { in: productIds } },
       select: { id: true, name: true },
     });
-    const productNameMap = new Map(products.map((p) => [p.id, p.name]));
+    const productNameMap = new Map<string, string>(products.map((p) => [p.id, p.name]));
 
     for (const sale of sales) {
       for (const item of sale.items) {

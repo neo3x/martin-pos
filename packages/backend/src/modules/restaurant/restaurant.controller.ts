@@ -17,6 +17,11 @@ export class RestaurantController {
     return this.restaurantService.getOrders(req.user.branchId, status);
   }
 
+  @Put('tables/:id/status')
+  updateTableStatus(@Param('id') id: string, @Body() data: { status: string }, @Request() req) {
+    return this.restaurantService.updateTableStatus(id, req.user.branchId, data.status);
+  }
+
   @Post('orders')
   createOrder(@Body() data: any, @Request() req) {
     return this.restaurantService.createOrder(data, req.user.branchId, req.user.id);

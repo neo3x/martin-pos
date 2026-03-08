@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -33,6 +33,22 @@ export class RestaurantService {
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
+    });
+  }
+
+  async updateTableStatus(tableId: string, branchId: string, status: string) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, branchId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!table) {
+      throw new NotFoundException('Mesa no encontrada');
+    }
+
+    return this.prisma.table.update({
+      where: { id: table.id },
+      data: { status: status as any },
     });
   }
 

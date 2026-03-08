@@ -126,10 +126,19 @@ export class ProductsService {
       }
     }
 
+    const normalizedData: any = {
+      ...data,
+      costPrice: data.cost ?? data.price ?? 0,
+      stock: data.stock ?? 0,
+      minStock: data.minStock ?? 0,
+      unit: data.unit || 'UN',
+      status: ProductStatus.ACTIVE,
+    };
+    delete normalizedData.cost;
+
     const product = await this.prisma.product.create({
       data: {
-        ...data,
-        status: ProductStatus.ACTIVE,
+        ...normalizedData,
       } as any,
       include: {
         category: true,
@@ -142,10 +151,15 @@ export class ProductsService {
 
   async update(id: string, data: UpdateProductDto) {
     const product = await this.findOne(id);
+    const normalizedData: any = {
+      ...data,
+      ...(data.cost !== undefined ? { costPrice: data.cost } : {}),
+    };
+    delete normalizedData.cost;
 
     return this.prisma.product.update({
       where: { id: product.id },
-      data,
+      data: normalizedData,
       include: {
         category: true,
       },

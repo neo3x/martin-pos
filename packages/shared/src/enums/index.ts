@@ -2,6 +2,7 @@ export enum ModuleType {
   RESTAURANT = 'RESTAURANT',
   BOOKSTORE = 'BOOKSTORE',
   MINIMARKET = 'MINIMARKET',
+  BOTILLERIA = 'BOTILLERIA',
   ALL = 'ALL',
 }
 
