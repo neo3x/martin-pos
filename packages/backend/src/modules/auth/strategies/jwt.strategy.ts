@@ -10,14 +10,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private usersService: UsersService
   ) {
-    const secret = configService.get<string>('JWT_SECRET');
-    if (!secret || secret === 'your-super-secret-jwt-key-change-in-production') {
+    const secret = configService.get<string>('JWT_SECRET') || 'super-secret-key';
+    if (!configService.get<string>('JWT_SECRET') || secret === 'super-secret-key') {
       console.warn('WARNING: JWT_SECRET not configured or using default value. Set a strong secret in production.');
     }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: secret || 'dev-only-secret-change-me',
+      secretOrKey: secret,
     });
   }
 

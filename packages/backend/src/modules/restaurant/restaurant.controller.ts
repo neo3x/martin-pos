@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { RestaurantService } from './restaurant.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -10,6 +10,11 @@ export class RestaurantController {
   @Get('tables')
   getTables(@Request() req) {
     return this.restaurantService.getTables(req.user.branchId);
+  }
+
+  @Get('orders')
+  getOrders(@Request() req, @Query('status') status?: string) {
+    return this.restaurantService.getOrders(req.user.branchId, status);
   }
 
   @Post('orders')

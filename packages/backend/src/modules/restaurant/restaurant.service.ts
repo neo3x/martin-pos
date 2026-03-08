@@ -12,6 +12,30 @@ export class RestaurantService {
     });
   }
 
+  async getOrders(branchId: string, status?: string) {
+    const where: any = { branchId, deletedAt: null };
+
+    if (status === 'active') {
+      where.status = { in: ['PENDING', 'PREPARING', 'READY'] };
+    } else if (status) {
+      where.status = status;
+    }
+
+    return this.prisma.order.findMany({
+      where,
+      include: {
+        table: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+  }
+
   async createOrder(data: any, branchId: string, waiterId?: string) {
     const lastOrder = await this.prisma.order.findFirst({
       where: { branchId },
