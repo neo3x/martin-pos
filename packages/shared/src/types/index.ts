@@ -189,6 +189,8 @@ export interface ISaleCreate {
   discount?: number;
   notes?: string;
   tableId?: string;
+  orderId?: string;
+  ageVerified?: boolean;
 }
 
 // Stock Movement Types
@@ -241,6 +243,8 @@ export interface ITable extends ITimestamps {
   status: TableStatus;
   branchId: string;
   currentOrderId?: string;
+  currentDiners: number;
+  openedAt?: Date;
 }
 
 export interface IOrder extends ITimestamps {
@@ -249,9 +253,11 @@ export interface IOrder extends ITimestamps {
   tableId: string;
   branchId: string;
   status: OrderStatus;
+  diners: number;
   items: IOrderItem[];
   waiterId?: string;
   notes?: string;
+  closedAt?: Date;
 }
 
 export interface IOrderItem {
@@ -259,6 +265,8 @@ export interface IOrderItem {
   productId: string;
   productName: string;
   quantity: number;
+  unitPrice: number;
+  paidQuantity: number;
   status: OrderStatus;
   notes?: string;
   preparedAt?: Date;

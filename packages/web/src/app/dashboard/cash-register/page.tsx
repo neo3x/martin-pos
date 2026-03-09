@@ -111,7 +111,9 @@ export default function CashRegisterPage() {
             <StatCard
               title="Efectivo Esperado"
               value={`$${Number(
-                (Number(currentRegister.initialCash) || 0) + (Number(currentRegister.cashSales) || 0)
+                (Number(currentRegister.initialCash) || 0) +
+                  (Number(currentRegister.incomeTotal) || 0) -
+                  (Number(currentRegister.expenseTotal) || 0)
               ).toLocaleString('es-CL')}`}
               icon={<DollarSign className="h-5 w-5" />}
               tone="bg-amber-50 text-amber-700"
@@ -184,7 +186,9 @@ export default function CashRegisterPage() {
                   <span
                     className={`font-bold ${
                       Number(finalCash) -
-                        ((Number(currentRegister.initialCash) || 0) + (Number(currentRegister.cashSales) || 0)) >=
+                        ((Number(currentRegister.initialCash) || 0) +
+                          (Number(currentRegister.incomeTotal) || 0) -
+                          (Number(currentRegister.expenseTotal) || 0)) >=
                       0
                         ? 'text-emerald-600'
                         : 'text-red-600'
@@ -193,7 +197,9 @@ export default function CashRegisterPage() {
                     $
                     {(
                       Number(finalCash) -
-                      ((Number(currentRegister.initialCash) || 0) + (Number(currentRegister.cashSales) || 0))
+                      ((Number(currentRegister.initialCash) || 0) +
+                        (Number(currentRegister.incomeTotal) || 0) -
+                        (Number(currentRegister.expenseTotal) || 0))
                     ).toLocaleString('es-CL')}
                   </span>
                 </p>

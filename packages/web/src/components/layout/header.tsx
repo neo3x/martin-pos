@@ -26,7 +26,9 @@ export function Header() {
           </span>
           <div>
             <p className="text-sm font-semibold text-slate-900">Bienvenido, {user?.firstName || 'Usuario'}</p>
-            <p className="text-xs text-slate-500">{user?.branchName || 'Sucursal principal'}</p>
+            <p className="text-xs text-slate-500">
+              {(user?.branchName || 'Sucursal principal')} · Perfil {user?.role || 'ADMIN'}
+            </p>
           </div>
         </div>
 

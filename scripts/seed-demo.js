@@ -46,7 +46,7 @@ async function ensureTable(branchId, number, capacity) {
   });
   if (existing) return existing;
   return prisma.table.create({
-    data: { branchId, number, capacity, status: "AVAILABLE" },
+    data: { branchId, number, capacity, status: "AVAILABLE", currentDiners: 0 },
   });
 }
 
@@ -305,26 +305,37 @@ async function main() {
 
     await prisma.table.update({
       where: { id: table.id },
-      data: { status: status === "READY" ? "OCCUPIED" : "OCCUPIED" },
+      data: {
+        status: "OCCUPIED",
+        currentDiners: 2 + (i % 3),
+        openedAt: now,
+      },
     });
 
-    await prisma.order.create({
+    const order = await prisma.order.create({
       data: {
         orderNumber,
         status,
         tableId: table.id,
         branchId,
         waiterId: cashier.id,
+        diners: 2 + (i % 3),
         items: {
           create: [
             {
               productId: p.id,
               quantity: 1 + (i % 3),
+              unitPrice: p.price,
               status: "PENDING",
             },
           ],
         },
       },
+    });
+
+    await prisma.table.update({
+      where: { id: table.id },
+      data: { currentOrderId: order.id },
     });
   }
 

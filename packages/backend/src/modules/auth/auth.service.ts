@@ -162,12 +162,12 @@ export class AuthService {
     return this.login(userWithoutPassword);
   }
 
-  async demoAccess(moduleType: ModuleType): Promise<IAuthResponse> {
+  async demoAccess(moduleType: ModuleType, role: UserRole = UserRole.ADMIN): Promise<IAuthResponse> {
     const safeModule = moduleType || ModuleType.MINIMARKET;
     const moduleSlug = safeModule.toLowerCase();
-    const demoEmail = `demo.${moduleSlug}@demo.martinpos.local`;
     const demoPassword = 'demo123';
     const hashedPassword = await bcrypt.hash(demoPassword, 10);
+    const requestedRole = role || UserRole.ADMIN;
 
     let branch = await this.prisma.branch.findFirst({
       where: {
@@ -194,22 +194,44 @@ export class AuthService {
       });
     }
 
-    let user = await this.usersService.findByEmail(demoEmail);
-    if (!user) {
-      user = await this.usersService.create({
-        email: demoEmail,
-        password: hashedPassword,
-        firstName: 'Demo',
-        lastName: this.moduleLabel(safeModule),
-        role: UserRole.ADMIN,
-        phoneNumber: '+56900000000',
-        branchId: branch.id,
-      });
+    const demoRoles = this.getDemoRolesForModule(safeModule);
+    const ensuredUsers = new Map<UserRole, any>();
+
+    for (const demoRole of demoRoles) {
+      const identity = this.getDemoIdentity(safeModule, demoRole);
+      let demoUser = await this.usersService.findByEmail(identity.email);
+      if (!demoUser) {
+        demoUser = await this.usersService.create({
+          email: identity.email,
+          password: hashedPassword,
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+          role: demoRole,
+          phoneNumber: '+56900000000',
+          branchId: branch.id,
+        });
+      } else {
+        demoUser = await this.usersService.update(demoUser.id, {
+          password: hashedPassword,
+          firstName: identity.firstName,
+          lastName: identity.lastName,
+          role: demoRole,
+          branchId: branch.id,
+          phoneNumber: '+56900000000',
+        } as any);
+      }
+      ensuredUsers.set(demoRole, demoUser);
     }
 
-    await this.bootstrapModuleData(branch.id, user.id, safeModule);
+    const selectedUser =
+      ensuredUsers.get(requestedRole) ||
+      ensuredUsers.get(UserRole.ADMIN) ||
+      Array.from(ensuredUsers.values())[0];
 
-    const { password: _, ...userWithoutPassword } = user;
+    const seedUser = ensuredUsers.get(UserRole.ADMIN) || selectedUser;
+    await this.bootstrapModuleData(branch.id, seedUser.id, safeModule);
+
+    const { password: _, ...userWithoutPassword } = selectedUser;
     return this.login(userWithoutPassword);
   }
 
@@ -274,6 +296,46 @@ export class AuthService {
       [ModuleType.ALL]: 'Multimodulo',
     };
     return labels[moduleType] || 'Comercio';
+  }
+
+  private getDemoRolesForModule(moduleType: ModuleType): UserRole[] {
+    if (moduleType === ModuleType.RESTAURANT) {
+      return [
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+        UserRole.CASHIER,
+        UserRole.WAITER,
+        UserRole.KITCHEN,
+        UserRole.VIEWER,
+      ];
+    }
+
+    return [
+      UserRole.ADMIN,
+      UserRole.MANAGER,
+      UserRole.CASHIER,
+      UserRole.VIEWER,
+    ];
+  }
+
+  private getDemoIdentity(moduleType: ModuleType, role: UserRole) {
+    const moduleSlug = moduleType.toLowerCase();
+    const roleSlug = role.toLowerCase();
+    const roleNameMap: Record<UserRole, { firstName: string; lastName: string }> = {
+      [UserRole.SUPER_ADMIN]: { firstName: 'Super', lastName: 'Demo' },
+      [UserRole.ADMIN]: { firstName: 'Admin', lastName: 'Demo' },
+      [UserRole.MANAGER]: { firstName: 'Encargado', lastName: 'Demo' },
+      [UserRole.CASHIER]: { firstName: 'Cajero', lastName: 'Demo' },
+      [UserRole.WAITER]: { firstName: 'Garzon', lastName: 'Demo' },
+      [UserRole.KITCHEN]: { firstName: 'Cocina', lastName: 'Demo' },
+      [UserRole.VIEWER]: { firstName: 'Consulta', lastName: 'Demo' },
+    };
+
+    return {
+      email: `demo.${moduleSlug}.${roleSlug}@demo.martinpos.local`,
+      firstName: roleNameMap[role].firstName,
+      lastName: `${roleNameMap[role].lastName} ${this.moduleLabel(moduleType)}`,
+    };
   }
 
   private async bootstrapModuleData(branchId: string, userId: string, moduleType: ModuleType): Promise<void> {
@@ -480,14 +542,24 @@ export class AuthService {
         const existing = await this.prisma.table.findFirst({
           where: { branchId, number: tableNumber, deletedAt: null },
         });
+        const isOccupied = i % 3 === 0;
         const table = existing
-          ? existing
+          ? await this.prisma.table.update({
+              where: { id: existing.id },
+              data: {
+                status: isOccupied ? 'OCCUPIED' : 'AVAILABLE',
+                currentDiners: isOccupied ? 2 + (i % 4) : 0,
+                openedAt: isOccupied ? new Date() : null,
+              },
+            })
           : await this.prisma.table.create({
               data: {
                 branchId,
                 number: tableNumber,
                 capacity: 2 + (i % 4),
-                status: i % 3 === 0 ? 'OCCUPIED' : 'AVAILABLE',
+                status: isOccupied ? 'OCCUPIED' : 'AVAILABLE',
+                currentDiners: isOccupied ? 2 + (i % 4) : 0,
+                openedAt: isOccupied ? new Date() : null,
               },
             });
         tables.push(table);
@@ -499,22 +571,34 @@ export class AuthService {
         if (exists) continue;
         const product = createdProducts[i % createdProducts.length];
         const table = tables[i % tables.length];
-        await this.prisma.order.create({
+        const createdOrder = await this.prisma.order.create({
           data: {
             orderNumber,
             branchId,
             tableId: table.id,
             waiterId: userId,
             status: ['PENDING', 'PREPARING', 'READY'][i % 3] as any,
+            diners: 2 + (i % 3),
             items: {
               create: [
                 {
                   productId: product.id,
                   quantity: 1 + (i % 2),
+                  unitPrice: product.price,
                   status: 'PENDING',
                 },
               ],
             },
+          },
+        });
+
+        await this.prisma.table.update({
+          where: { id: table.id },
+          data: {
+            status: 'OCCUPIED',
+            currentOrderId: createdOrder.id,
+            currentDiners: 2 + (i % 3),
+            openedAt: new Date(),
           },
         });
       }
@@ -927,4 +1011,3 @@ export class AuthService {
     };
   }
 }
-

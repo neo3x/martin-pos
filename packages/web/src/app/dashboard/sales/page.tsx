@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { ShoppingCart, Plus, X, Search, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useAuthStore } from '@/store/auth';
 
 export default function SalesPage() {
   const queryClient = useQueryClient();
@@ -12,6 +13,8 @@ export default function SalesPage() {
   const [cart, setCart] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [ageVerified, setAgeVerified] = useState(false);
+  const moduleType = useAuthStore((state) => state.activeModule || state.user?.moduleType || 'ALL');
 
   const { data: sales, isLoading } = useQuery({
     queryKey: ['sales'],
@@ -30,6 +33,7 @@ export default function SalesPage() {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
       setCart([]);
       setShowNewSale(false);
+      setAgeVerified(false);
       toast.success('Venta registrada exitosamente');
     },
     onError: () => toast.error('Error al registrar la venta'),
@@ -47,6 +51,7 @@ export default function SalesPage() {
       setCart([...cart, {
         productId: product.id,
         name: product.name,
+        categoryName: product.category?.name,
         quantity: 1,
         unitPrice: Number(product.price),
       }]);
@@ -58,9 +63,18 @@ export default function SalesPage() {
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  const cartUnits = cart.reduce((sum, item) => sum + Number(item.quantity), 0);
+  const hasAlcoholItems = cart.some((item) => ['Vinos', 'Cervezas', 'Destilados'].includes(item.categoryName));
+  const bookstoreAutoDiscount = moduleType === 'BOOKSTORE' && cartUnits >= 5 ? Math.round(cartTotal * 0.05) : 0;
 
   const handleCompleteSale = () => {
     if (cart.length === 0) return;
+
+    if (moduleType === 'BOTILLERIA' && hasAlcoholItems && !ageVerified) {
+      toast.error('Debes validar mayoría de edad para vender alcohol');
+      return;
+    }
+
     createSaleMutation.mutate({
       items: cart.map((item) => ({
         productId: item.productId,
@@ -68,6 +82,7 @@ export default function SalesPage() {
         unitPrice: item.unitPrice,
       })),
       paymentMethod,
+      ageVerified: moduleType === 'BOTILLERIA' ? ageVerified : undefined,
     });
   };
 
@@ -119,6 +134,21 @@ export default function SalesPage() {
           {/* Cart */}
           <div className="rounded-lg bg-white p-6 shadow">
             <h2 className="mb-4 text-lg font-semibold">Carrito</h2>
+            {moduleType === 'MINIMARKET' && (
+              <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                Flujo minimarket: venta rápida de alta rotación.
+              </div>
+            )}
+            {moduleType === 'BOTILLERIA' && (
+              <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                Flujo botillería: ventas con control de mayoría de edad para productos alcohólicos.
+              </div>
+            )}
+            {moduleType === 'BOOKSTORE' && (
+              <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">
+                Flujo librería: descuento automático del 5% por 5+ unidades en la venta.
+              </div>
+            )}
             {cart.length === 0 ? (
               <p className="text-center text-gray-500">Agrega productos al carrito</p>
             ) : (
@@ -160,6 +190,21 @@ export default function SalesPage() {
                     <span>Total:</span>
                     <span>${cartTotal.toLocaleString('es-CL')}</span>
                   </div>
+                  {moduleType === 'BOOKSTORE' && bookstoreAutoDiscount > 0 && (
+                    <p className="mb-2 text-sm font-semibold text-indigo-700">
+                      Descuento librería estimado: -${bookstoreAutoDiscount.toLocaleString('es-CL')}
+                    </p>
+                  )}
+                  {moduleType === 'BOTILLERIA' && hasAlcoholItems && (
+                    <label className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={ageVerified}
+                        onChange={(e) => setAgeVerified(e.target.checked)}
+                      />
+                      Mayoría de edad verificada
+                    </label>
+                  )}
                   <div className="mb-3">
                     <label className="mb-1 block text-sm font-medium">Método de Pago</label>
                     <select

@@ -349,10 +349,59 @@ async function ensureAdmin(branchId: string, moduleType: ModuleType, passwordHas
   });
 }
 
+async function ensureOperationalUsers(branchId: string, moduleType: ModuleType, passwordHash: string) {
+  const rolesByModule: Record<Exclude<ModuleType, 'ALL'>, UserRole[]> = {
+    RESTAURANT: [UserRole.MANAGER, UserRole.CASHIER, UserRole.WAITER, UserRole.KITCHEN, UserRole.VIEWER],
+    MINIMARKET: [UserRole.MANAGER, UserRole.CASHIER, UserRole.VIEWER],
+    BOTILLERIA: [UserRole.MANAGER, UserRole.CASHIER, UserRole.VIEWER],
+    BOOKSTORE: [UserRole.MANAGER, UserRole.CASHIER, UserRole.VIEWER],
+  };
+
+  const roleLabels: Record<UserRole, string> = {
+    SUPER_ADMIN: 'Super',
+    ADMIN: 'Admin',
+    MANAGER: 'Encargado',
+    CASHIER: 'Cajero',
+    WAITER: 'Garzon',
+    KITCHEN: 'Cocina',
+    VIEWER: 'Consulta',
+  };
+
+  const safeModule = moduleType as Exclude<ModuleType, 'ALL'>;
+  const roleSet = rolesByModule[safeModule] || [];
+
+  for (const role of roleSet) {
+    const email = `${role.toLowerCase()}.${safeModule.toLowerCase()}@demo.martinpos.local`;
+    const existing = await prisma.user.findUnique({ where: { email } });
+    const payload = {
+      password: passwordHash,
+      firstName: roleLabels[role],
+      lastName: `Demo ${safeModule}`,
+      role,
+      isActive: true,
+      branchId,
+    };
+
+    if (existing) {
+      await prisma.user.update({
+        where: { email },
+        data: payload,
+      });
+    } else {
+      await prisma.user.create({
+        data: {
+          email,
+          ...payload,
+        },
+      });
+    }
+  }
+}
+
 async function seedModuleData(branchId: string, userId: string, moduleType: Exclude<ModuleType, 'ALL'>) {
   const blueprint = blueprints[moduleType];
   const categoryIds = new Map<string, string>();
-  const products: { id: string; price: number; stock: number; minStock: number }[] = [];
+  const products: { id: string; price: number; stock: number; minStock: number; categoryName: string }[] = [];
 
   for (const category of blueprint.categories) {
     const existing = await prisma.category.findFirst({
@@ -406,6 +455,7 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
       price: Number(saved.price),
       stock: Number(saved.stock),
       minStock: Number(saved.minStock),
+      categoryName: product.categoryName,
     });
   }
 
@@ -540,16 +590,67 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
     }
   }
 
+  if (moduleType === ModuleType.BOTILLERIA) {
+    for (const product of products) {
+      const existingAlcohol = await prisma.alcoholicProduct.findUnique({
+        where: { productId: product.id },
+      });
+
+      const payload =
+        product.categoryName === 'Vinos'
+          ? {
+              category: 'WINE_RED' as const,
+              alcoholContent: 13,
+              taxCategory: 'STANDARD' as const,
+            }
+          : product.categoryName === 'Cervezas'
+            ? {
+                category: 'BEER_LAGER' as const,
+                alcoholContent: 5,
+                taxCategory: 'STANDARD' as const,
+              }
+            : product.categoryName === 'Destilados'
+              ? {
+                  category: 'SPIRITS_WHISKY' as const,
+                  alcoholContent: 40,
+                  taxCategory: 'HIGH' as const,
+                }
+              : null;
+
+      if (!payload) continue;
+
+      if (existingAlcohol) {
+        await prisma.alcoholicProduct.update({
+          where: { productId: product.id },
+          data: payload,
+        });
+      } else {
+        await prisma.alcoholicProduct.create({
+          data: {
+            productId: product.id,
+            ...payload,
+          },
+        });
+      }
+    }
+  }
+
   if (moduleType === ModuleType.RESTAURANT && blueprint.tables?.length) {
     const tableIds: string[] = [];
     for (const table of blueprint.tables) {
       const existing = await prisma.table.findFirst({
         where: { branchId, number: table.number, deletedAt: null },
       });
+      const currentDiners = table.status === 'OCCUPIED' ? Math.min(table.capacity, 2 + (Number(table.number) % 3)) : 0;
       const saved = existing
         ? await prisma.table.update({
             where: { id: existing.id },
-            data: { capacity: table.capacity, status: table.status },
+            data: {
+              capacity: table.capacity,
+              status: table.status,
+              currentDiners,
+              openedAt: table.status === 'OCCUPIED' ? new Date() : null,
+            },
           })
         : await prisma.table.create({
             data: {
@@ -557,6 +658,8 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
               number: table.number,
               capacity: table.capacity,
               status: table.status,
+              currentDiners,
+              openedAt: table.status === 'OCCUPIED' ? new Date() : null,
             },
           });
       tableIds.push(saved.id);
@@ -567,22 +670,34 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
       const existing = await prisma.order.findFirst({ where: { branchId, orderNumber } });
       if (existing) continue;
       const product = products[i % products.length];
-      await prisma.order.create({
+      const createdOrder = await prisma.order.create({
         data: {
           orderNumber,
           branchId,
           tableId: tableIds[i % tableIds.length],
           waiterId: userId,
           status: ['PENDING', 'PREPARING', 'READY'][i % 3] as any,
+          diners: 2 + (i % 3),
           items: {
             create: [
               {
                 productId: product.id,
                 quantity: 1 + (i % 2),
+                unitPrice: product.price,
                 status: 'PENDING',
               },
             ],
           },
+        },
+      });
+
+      await prisma.table.update({
+        where: { id: tableIds[i % tableIds.length] },
+        data: {
+          status: 'OCCUPIED',
+          currentOrderId: createdOrder.id,
+          currentDiners: 2 + (i % 3),
+          openedAt: new Date(),
         },
       });
     }
@@ -600,6 +715,7 @@ async function main() {
   for (const moduleType of modules) {
     const branch = await ensureBranch(moduleType);
     const user = await ensureAdmin(branch.id, moduleType, ADMIN_PASSWORD_HASH);
+    await ensureOperationalUsers(branch.id, moduleType, ADMIN_PASSWORD_HASH);
     await seedModuleData(branch.id, user.id, moduleType);
     console.log(`Seed module ${moduleType}: ${branch.name} (${user.email})`);
   }

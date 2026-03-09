@@ -1,4 +1,4 @@
-import { IsArray, IsString, IsNumber, IsOptional, ValidateNested, ArrayMinSize, Min, IsEnum } from 'class-validator';
+import { IsArray, IsString, IsNumber, IsOptional, ValidateNested, ArrayMinSize, Min, IsEnum, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from '@martin-pos/shared';
 
@@ -22,6 +22,10 @@ export class SaleItemDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  ageVerified?: boolean;
 }
 
 export class CreateSaleDto {
@@ -41,6 +45,10 @@ export class CreateSaleDto {
   @IsOptional()
   @IsString()
   tableId?: string;
+
+  @IsOptional()
+  @IsString()
+  orderId?: string;
 
   @IsOptional()
   @IsNumber()

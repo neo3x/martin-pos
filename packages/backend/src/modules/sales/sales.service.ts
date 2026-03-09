@@ -26,6 +26,20 @@ export class SalesService {
       where: { id: branchId },
     });
     const taxRate = (branch?.config as any)?.taxRate || 0.19;
+    const branchModule = branch?.moduleType;
+
+    if (branchModule === 'BOTILLERIA') {
+      const productIds = data.items.map((item) => item.productId);
+      const alcoholicCount = await this.prisma.alcoholicProduct.count({
+        where: {
+          productId: { in: productIds },
+        },
+      });
+
+      if (alcoholicCount > 0 && !data.ageVerified) {
+        throw new BadRequestException('Debe validar mayoría de edad para vender productos alcohólicos');
+      }
+    }
 
     // All stock validation and mutation inside a single transaction
     const sale = await this.prisma.$transaction(async (tx) => {
@@ -66,7 +80,18 @@ export class SalesService {
         });
       }
 
-      const totals = calculateSaleTotal(subtotal, taxRate, data.discount || 0);
+      const totalUnits = data.items.reduce((sum, item) => sum + Number(item.quantity), 0);
+      const autoBookstoreDiscount =
+        branchModule === 'BOOKSTORE' && totalUnits >= 5 ? Math.round(subtotal * 0.05) : 0;
+      const requestedDiscount = Number(data.discount || 0);
+      const effectiveDiscount = requestedDiscount + autoBookstoreDiscount;
+      const totals = calculateSaleTotal(subtotal, taxRate, effectiveDiscount);
+      const saleNotes = [
+        data.notes,
+        autoBookstoreDiscount > 0 ? 'Descuento automático librería aplicado (5%)' : null,
+      ]
+        .filter(Boolean)
+        .join(' | ');
 
       // Create sale
       const newSale = await tx.sale.create({
@@ -81,8 +106,9 @@ export class SalesService {
           discount: totals.discount,
           total: totals.total,
           paymentMethod: data.paymentMethod,
-          notes: data.notes,
+          notes: saleNotes || undefined,
           tableId: data.tableId,
+          orderId: data.orderId,
           items: {
             create: saleItems,
           },
@@ -131,6 +157,35 @@ export class SalesService {
 
       return newSale;
     });
+
+    const openRegister = await this.prisma.cashRegister.findFirst({
+      where: { branchId, userId, status: 'OPEN' },
+      select: { id: true },
+    });
+
+    if (openRegister) {
+      await this.prisma.$transaction([
+        this.prisma.cashTransaction.create({
+          data: {
+            cashRegisterId: openRegister.id,
+            userId,
+            type: 'INCOME',
+            amount: sale.total,
+            paymentMethod: data.paymentMethod as any,
+            description: `Venta ${sale.saleNumber}`,
+            saleId: sale.id,
+          },
+        }),
+        this.prisma.cashRegister.update({
+          where: { id: openRegister.id },
+          data: {
+            totalSales: {
+              increment: sale.total,
+            },
+          },
+        }),
+      ]);
+    }
 
     this.logger.log(`Sale created: ${sale.saleNumber} total=${sale.total} by user ${userId}`);
     return sale;

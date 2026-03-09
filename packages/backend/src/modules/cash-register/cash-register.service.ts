@@ -86,9 +86,33 @@ export class CashRegisterService {
   }
 
   async getCurrentRegister(userId: string, branchId: string) {
-    return this.prisma.cashRegister.findFirst({
+    const register = await this.prisma.cashRegister.findFirst({
       where: { userId, branchId, status: 'OPEN' },
       include: { transactions: true },
     });
+
+    if (!register) {
+      return null;
+    }
+
+    const cashSales = register.transactions
+      .filter((tx) => tx.type === 'INCOME' && tx.paymentMethod === 'CASH')
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+
+    const incomeTotal = register.transactions
+      .filter((tx) => tx.type === 'INCOME')
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+
+    const expenseTotal = register.transactions
+      .filter((tx) => tx.type === 'EXPENSE')
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+
+    return {
+      ...register,
+      transactionCount: register.transactions.length,
+      cashSales,
+      incomeTotal,
+      expenseTotal,
+    };
   }
 }

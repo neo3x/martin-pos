@@ -1,0 +1,15 @@
+-- Restaurant account flow + accountable order items
+
+ALTER TABLE "tables"
+ADD COLUMN IF NOT EXISTS "currentDiners" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "openedAt" TIMESTAMP(3);
+
+ALTER TABLE "orders"
+ADD COLUMN IF NOT EXISTS "diners" INTEGER NOT NULL DEFAULT 1,
+ADD COLUMN IF NOT EXISTS "closedAt" TIMESTAMP(3);
+
+ALTER TABLE "order_items"
+ADD COLUMN IF NOT EXISTS "unitPrice" DECIMAL(10,2) NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "paidQuantity" INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS "sales_orderId_idx" ON "sales"("orderId");

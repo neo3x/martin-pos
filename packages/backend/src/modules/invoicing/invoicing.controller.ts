@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
 import { InvoicingService } from './invoicing.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -7,9 +7,22 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class InvoicingController {
   constructor(private invoicingService: InvoicingService) {}
 
+  @Get()
+  findAll(@Request() req) {
+    return this.invoicingService.findAll(req.user.branchId);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.invoicingService.findOne(id, req.user.branchId);
+  }
+
   @Post('from-sale')
-  createFromSale(@Body() data: { saleId: string }, @Request() req) {
-    return this.invoicingService.createInvoiceFromSale(data.saleId, req.user.branchId);
+  createFromSale(
+    @Body() data: { saleId: string; type?: 'INVOICE' | 'RECEIPT' },
+    @Request() req
+  ) {
+    return this.invoicingService.createInvoiceFromSale(data.saleId, req.user.branchId, data.type || 'INVOICE');
   }
 
   @Put(':id/issue')

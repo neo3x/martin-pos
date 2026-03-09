@@ -27,36 +27,43 @@ import { useAuthStore } from '@/store/auth';
 import { MODULE_NAME_MAP } from '@/lib/modules';
 
 type ModuleKey = 'RESTAURANT' | 'MINIMARKET' | 'BOTILLERIA' | 'BOOKSTORE' | 'ALL';
+type RoleKey = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'CASHIER' | 'WAITER' | 'KITCHEN' | 'VIEWER';
 
 const ALL_MODULES = ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'];
+const ALL_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'WAITER', 'KITCHEN', 'VIEWER'];
+const MANAGEMENT_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
+const CASH_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'];
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ALL_MODULES },
-  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES },
-  { name: 'Caja', href: '/dashboard/cash-register', icon: Banknote, modules: ALL_MODULES },
-  { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ALL_MODULES },
-  { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ALL_MODULES },
-  { name: 'Transferencias', href: '/dashboard/transfers', icon: Repeat, modules: ALL_MODULES },
-  { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ALL_MODULES },
-  { name: 'Fidelizacion', href: '/dashboard/loyalty', icon: Star, modules: ALL_MODULES },
-  { name: 'Empleados', href: '/dashboard/employees', icon: Clock, modules: ALL_MODULES },
-  { name: 'Promociones', href: '/dashboard/promotions', icon: Gift, modules: ALL_MODULES },
-  { name: 'Facturacion', href: '/dashboard/invoices', icon: FileText, modules: ALL_MODULES },
-  { name: 'Delivery', href: '/dashboard/delivery', icon: Truck, modules: ['ALL', 'RESTAURANT', 'MINIMARKET'] },
-  { name: 'Apartados', href: '/dashboard/layaway', icon: Wallet, modules: ALL_MODULES },
-  { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, modules: ALL_MODULES },
-  { name: 'Asistente IA', href: '/dashboard/ai', icon: Bot, modules: ALL_MODULES },
-  { name: 'Alertas Fraude', href: '/dashboard/fraud', icon: Shield, modules: ALL_MODULES },
-  { name: 'Restaurante', href: '/dashboard/restaurant', icon: UtensilsCrossed, modules: ['ALL', 'RESTAURANT'] },
-  { name: 'Configuracion', href: '/dashboard/settings', icon: Settings, modules: ALL_MODULES },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ALL_MODULES, roles: ALL_ROLES },
+  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'WAITER'] },
+  { name: 'Caja', href: '/dashboard/cash-register', icon: Banknote, modules: ALL_MODULES, roles: CASH_ROLES },
+  { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Transferencias', href: '/dashboard/transfers', icon: Repeat, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ALL_MODULES, roles: [...CASH_ROLES, 'VIEWER'] },
+  { name: 'Fidelizacion', href: '/dashboard/loyalty', icon: Star, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'] },
+  { name: 'Empleados', href: '/dashboard/employees', icon: Clock, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Promociones', href: '/dashboard/promotions', icon: Gift, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Facturacion', href: '/dashboard/invoices', icon: FileText, modules: ALL_MODULES, roles: CASH_ROLES },
+  { name: 'Delivery', href: '/dashboard/delivery', icon: Truck, modules: ['ALL', 'RESTAURANT', 'MINIMARKET'], roles: [...CASH_ROLES, 'WAITER'] },
+  { name: 'Apartados', href: '/dashboard/layaway', icon: Wallet, modules: ALL_MODULES, roles: CASH_ROLES },
+  { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, modules: ALL_MODULES, roles: [...MANAGEMENT_ROLES, 'VIEWER'] },
+  { name: 'Asistente IA', href: '/dashboard/ai', icon: Bot, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Alertas Fraude', href: '/dashboard/fraud', icon: Shield, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Restaurante', href: '/dashboard/restaurant', icon: UtensilsCrossed, modules: ['ALL', 'RESTAURANT'], roles: [...CASH_ROLES, 'WAITER', 'KITCHEN', 'VIEWER'] },
+  { name: 'Configuracion', href: '/dashboard/settings', icon: Settings, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
   const activeModule = (useAuthStore((state) => state.activeModule) || user?.moduleType || 'ALL') as ModuleKey;
+  const activeRole = (user?.role || 'ADMIN') as RoleKey;
 
-  const filteredNav = navigation.filter((item) => item.modules.includes(activeModule));
+  const filteredNav = navigation.filter(
+    (item) => item.modules.includes(activeModule) && item.roles.includes(activeRole)
+  );
   const moduleLabel = MODULE_NAME_MAP[activeModule] || 'Multimodulo';
 
   return (

@@ -32,8 +32,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 15, ttl: 60000 } })
   async demoAccess(@Body() dto: DemoAccessDto) {
-    this.logger.log(`Demo access requested for module: ${dto.moduleType}`);
-    return this.authService.demoAccess(dto.moduleType);
+    this.logger.log(`Demo access requested for module: ${dto.moduleType}, role: ${dto.role || 'ADMIN'}`);
+    return this.authService.demoAccess(dto.moduleType, dto.role);
   }
 
   @UseGuards(JwtAuthGuard)

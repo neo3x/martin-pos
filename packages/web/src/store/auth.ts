@@ -25,7 +25,7 @@ interface AuthState {
   setActiveModule: (module: BusinessModule) => void;
   login: (email: string, password: string) => Promise<void>;
   register: (payload: Record<string, any>) => Promise<void>;
-  accessDemo: (moduleType: BusinessModule) => Promise<void>;
+  accessDemo: (moduleType: BusinessModule, role?: string) => Promise<void>;
   logout: () => void;
   initialize: () => void;
 }
@@ -106,8 +106,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     });
   },
 
-  accessDemo: async (moduleType) => {
-    const response = await api.post('/auth/demo-access', { moduleType });
+  accessDemo: async (moduleType, role) => {
+    const response = await api.post('/auth/demo-access', { moduleType, role });
     const { user, accessToken } = response.data;
     const normalizedUser = {
       ...user,
