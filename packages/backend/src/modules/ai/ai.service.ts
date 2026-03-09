@@ -292,7 +292,7 @@ Usa un tono profesional y enfócate en información accionable.`;
   }
 
   private buildSystemPrompt(branchId: string): string {
-    return `Eres un asistente inteligente para el sistema POS "Martin POS". Tu rol es ayudar con:
+    return `Eres un asistente inteligente para el sistema POS "OmniPunto". Tu rol es ayudar con:
 
 1. Análisis de inventario y predicciones de stock
 2. Insights de ventas y tendencias

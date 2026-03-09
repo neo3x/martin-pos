@@ -43,7 +43,7 @@ async function bootstrap() {
   await app.listen(port);
 
   const logger = new Logger('Bootstrap');
-  logger.log(`Martin POS API running on: http://localhost:${port}/api/v1`);
+  logger.log(`OmniPunto API running on: http://localhost:${port}/api/v1`);
   logger.log(`Module: ${process.env.INSTALLED_MODULE || 'ALL'}`);
   logger.log(`CORS origin: ${corsOrigin || '*'}`);
 }

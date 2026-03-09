@@ -26,20 +26,24 @@ if "%DOCKER_COMPOSE%"=="" (
 :menu
 cls
 echo ==========================================
-echo   Martin POS - Deploy Setup
+echo   OmniPunto - Deploy Setup
 echo   Compose file: %COMPOSE_FILE%
 echo ==========================================
 echo.
 echo 1. Construir contenedores y lanzar servicios
 echo 2. Detener servicios
 echo 3. Iniciar servicios
-echo 4. Borrar cache, contenedores e imagenes
-echo 5. Salir
+echo 4. Prisma: solo migraciones
+echo 5. Prisma: migraciones + seed
+echo 6. Borrar cache, contenedores e imagenes
+echo 7. Salir
 echo.
-choice /c 12345 /n /m "Selecciona una opcion: "
+choice /c 1234567 /n /m "Selecciona una opcion: "
 
-if errorlevel 5 goto end
-if errorlevel 4 goto cleanup
+if errorlevel 7 goto end
+if errorlevel 6 goto cleanup
+if errorlevel 5 goto prisma_migrate_seed
+if errorlevel 4 goto prisma_migrate_only
 if errorlevel 3 goto start_services
 if errorlevel 2 goto stop_services
 if errorlevel 1 goto build_and_up
@@ -77,6 +81,87 @@ if errorlevel 1 (
 echo.
 pause
 goto menu
+
+:prisma_migrate_only
+call :ensure_prisma_services
+if errorlevel 1 (
+  echo.
+  pause
+  goto menu
+)
+
+call :run_prisma_migrate
+if errorlevel 1 (
+  echo.
+  pause
+  goto menu
+)
+
+echo.
+echo [INFO] Migraciones Prisma aplicadas correctamente.
+echo.
+pause
+goto menu
+
+:prisma_migrate_seed
+call :ensure_prisma_services
+if errorlevel 1 (
+  echo.
+  pause
+  goto menu
+)
+
+call :run_prisma_migrate
+if errorlevel 1 (
+  echo.
+  pause
+  goto menu
+)
+
+call :run_prisma_seed
+if errorlevel 1 (
+  echo.
+  pause
+  goto menu
+)
+
+echo.
+echo [INFO] Migraciones y seed Prisma finalizados.
+echo.
+pause
+goto menu
+
+:ensure_prisma_services
+echo.
+echo [INFO] Levantando servicios requeridos (postgres + backend)...
+%DOCKER_COMPOSE% -f %COMPOSE_FILE% up -d postgres backend
+if errorlevel 1 (
+  echo [ERROR] No fue posible iniciar postgres/backend.
+  exit /b 1
+)
+exit /b 0
+
+:run_prisma_migrate
+echo.
+echo [INFO] Ejecutando Prisma migrate deploy...
+%DOCKER_COMPOSE% -f %COMPOSE_FILE% exec backend sh -lc "/app/packages/database/node_modules/.bin/prisma migrate deploy --schema=/app/packages/database/prisma/schema.prisma"
+if errorlevel 1 (
+  echo [ERROR] No fue posible ejecutar migrate deploy.
+  echo         Verifica estado del backend y la base de datos.
+  exit /b 1
+)
+exit /b 0
+
+:run_prisma_seed
+echo.
+echo [INFO] Ejecutando seed Prisma...
+%DOCKER_COMPOSE% -f %COMPOSE_FILE% exec backend sh -lc "cd /app/packages/database && npx ts-node prisma/seed.ts"
+if errorlevel 1 (
+  echo [ERROR] El seed fallo. Revisa logs de backend y estado de la base de datos.
+  exit /b 1
+)
+echo [INFO] Seed completado.
+exit /b 0
 
 :cleanup
 echo.

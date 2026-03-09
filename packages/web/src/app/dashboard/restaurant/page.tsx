@@ -1,10 +1,10 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { CheckCircle, Clock, Plus, Receipt, Users, Utensils, X } from 'lucide-react';
+import { CheckCircle, Clock, Plus, Receipt, Soup, Users, Utensils, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 
@@ -13,6 +13,8 @@ const TABLE_STATUS_COLORS: Record<string, string> = {
   OCCUPIED: 'bg-rose-50 border-rose-200 text-rose-800',
   RESERVED: 'bg-amber-50 border-amber-200 text-amber-800',
   CLEANING: 'bg-slate-50 border-slate-200 text-slate-800',
+  PENDING_PAYMENT: 'bg-indigo-50 border-indigo-200 text-indigo-800',
+  CLOSED: 'bg-slate-100 border-slate-300 text-slate-700',
 };
 
 const TABLE_STATUS_LABELS: Record<string, string> = {
@@ -20,6 +22,8 @@ const TABLE_STATUS_LABELS: Record<string, string> = {
   OCCUPIED: 'Ocupada',
   RESERVED: 'Reservada',
   CLEANING: 'Limpieza',
+  PENDING_PAYMENT: 'Pendiente pago',
+  CLOSED: 'Cerrada/liberada',
 };
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
@@ -28,6 +32,19 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   READY: 'Listo',
   SERVED: 'Servido',
   CANCELLED: 'Cancelado',
+};
+
+const RESERVATION_STATUSES = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'];
+
+type ReservationForm = {
+  id?: string;
+  customerName: string;
+  customerPhone: string;
+  partySize: string;
+  reservationAt: string;
+  tableId: string;
+  status: string;
+  notes: string;
 };
 
 export default function RestaurantPage() {
@@ -41,22 +58,59 @@ export default function RestaurantPage() {
   const canKitchen = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'KITCHEN', 'WAITER'].includes(role);
   const canCashier = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'].includes(role);
   const canManageTables = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(role);
+  const canManageReservations = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'WAITER', 'CASHIER'].includes(role);
 
+  const [activeTab, setActiveTab] = useState<'salon' | 'reservas' | 'kds'>('salon');
+  const [sectorFilter, setSectorFilter] = useState('');
   const [selectedTableId, setSelectedTableId] = useState<string>('');
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [showOpenModal, setShowOpenModal] = useState(false);
-  const [newTableForm, setNewTableForm] = useState({ number: '', capacity: '4' });
+  const [newTableForm, setNewTableForm] = useState({ number: '', capacity: '4', sector: '' });
   const [openForm, setOpenForm] = useState({ diners: '2', waiterId: '' });
   const [addItemForm, setAddItemForm] = useState({ productId: '', quantity: '1', notes: '' });
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [splitParts, setSplitParts] = useState('2');
   const [customSplit, setCustomSplit] = useState<Record<string, number>>({});
   const [searchProduct, setSearchProduct] = useState('');
+  const [kdsMinWait, setKdsMinWait] = useState('0');
+  const [reservationForm, setReservationForm] = useState<ReservationForm>({
+    customerName: '',
+    customerPhone: '',
+    partySize: '2',
+    reservationAt: new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16),
+    tableId: '',
+    status: 'CONFIRMED',
+    notes: '',
+  });
+
+  const { data: dashboard } = useQuery({
+    queryKey: ['restaurant-dashboard'],
+    queryFn: () => api.get('/restaurant/dashboard').then((res) => res.data),
+    enabled: hasAccess,
+    refetchInterval: 20000,
+  });
 
   const { data: tables, isLoading } = useQuery({
-    queryKey: ['restaurant-tables'],
-    queryFn: () => api.get('/restaurant/tables').then((res) => res.data),
+    queryKey: ['restaurant-tables', sectorFilter],
+    queryFn: () =>
+      api
+        .get('/restaurant/tables', { params: { sector: sectorFilter || undefined } })
+        .then((res) => res.data),
     enabled: hasAccess,
+  });
+
+  const { data: reservations } = useQuery({
+    queryKey: ['restaurant-reservations'],
+    queryFn: () => api.get('/restaurant/reservations').then((res) => res.data),
+    enabled: hasAccess,
+  });
+
+  const { data: kdsQueue } = useQuery({
+    queryKey: ['restaurant-kds', kdsMinWait],
+    queryFn: () =>
+      api.get('/restaurant/kds', { params: { minWait: Number(kdsMinWait || 0) } }).then((res) => res.data),
+    enabled: hasAccess,
+    refetchInterval: 12000,
   });
 
   const { data: workers } = useQuery({
@@ -94,7 +148,10 @@ export default function RestaurantPage() {
   });
 
   const invalidateRestaurant = () => {
+    queryClient.invalidateQueries({ queryKey: ['restaurant-dashboard'] });
     queryClient.invalidateQueries({ queryKey: ['restaurant-tables'] });
+    queryClient.invalidateQueries({ queryKey: ['restaurant-reservations'] });
+    queryClient.invalidateQueries({ queryKey: ['restaurant-kds'] });
     queryClient.invalidateQueries({ queryKey: ['restaurant-active-orders'] });
     queryClient.invalidateQueries({ queryKey: ['restaurant-account'] });
     queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -107,10 +164,11 @@ export default function RestaurantPage() {
       api.post('/restaurant/tables', {
         number: newTableForm.number,
         capacity: Number(newTableForm.capacity || 0),
+        sector: newTableForm.sector || undefined,
       }),
     onSuccess: () => {
       toast.success('Mesa creada');
-      setNewTableForm({ number: '', capacity: '4' });
+      setNewTableForm({ number: '', capacity: '4', sector: '' });
       invalidateRestaurant();
     },
     onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo crear la mesa'),
@@ -152,8 +210,8 @@ export default function RestaurantPage() {
   });
 
   const updateItemMutation = useMutation({
-    mutationFn: ({ itemId, payload }: { itemId: string; payload: any }) =>
-      api.put(`/restaurant/orders/${selectedOrderId}/items/${itemId}`, payload),
+    mutationFn: ({ orderId, itemId, payload }: { orderId: string; itemId: string; payload: any }) =>
+      api.put(`/restaurant/orders/${orderId}/items/${itemId}`, payload),
     onSuccess: () => {
       invalidateRestaurant();
       refetchAccount();
@@ -253,6 +311,54 @@ export default function RestaurantPage() {
     onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo liberar mesa'),
   });
 
+  const saveReservationMutation = useMutation({
+    mutationFn: (payload: ReservationForm) => {
+      const body = {
+        customerName: payload.customerName,
+        customerPhone: payload.customerPhone || undefined,
+        partySize: Number(payload.partySize || 0),
+        reservationAt: payload.reservationAt,
+        tableId: payload.tableId || undefined,
+        status: payload.status,
+        notes: payload.notes || undefined,
+      };
+
+      if (payload.id) return api.put(`/restaurant/reservations/${payload.id}`, body);
+      return api.post('/restaurant/reservations', body);
+    },
+    onSuccess: () => {
+      toast.success('Reserva guardada');
+      setReservationForm({
+        customerName: '',
+        customerPhone: '',
+        partySize: '2',
+        reservationAt: new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16),
+        tableId: '',
+        status: 'CONFIRMED',
+        notes: '',
+      });
+      invalidateRestaurant();
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo guardar reserva'),
+  });
+
+  const updateReservationStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      api.put(`/restaurant/reservations/${id}/status`, { status }),
+    onSuccess: () => invalidateRestaurant(),
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo actualizar reserva'),
+  });
+
+  const seatReservationMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/restaurant/reservations/${id}/seat`, {}),
+    onSuccess: () => {
+      toast.success('Reserva convertida en mesa ocupada');
+      invalidateRestaurant();
+      setActiveTab('salon');
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo sentar reserva'),
+  });
+
   const selectedTable = useMemo(
     () => (tables || []).find((table: any) => table.id === selectedTableId),
     [tables, selectedTableId],
@@ -263,6 +369,14 @@ export default function RestaurantPage() {
       (workers || []).filter((worker: any) => ['WAITER', 'MANAGER', 'ADMIN', 'SUPER_ADMIN'].includes(worker.role)),
     [workers],
   );
+
+  const sectors = useMemo(() => {
+    const values = new Set<string>();
+    (tables || []).forEach((table: any) => {
+      if (table.sector) values.add(table.sector);
+    });
+    return Array.from(values).sort();
+  }, [tables]);
 
   if (!hasAccess) {
     return (
@@ -287,26 +401,56 @@ export default function RestaurantPage() {
     );
   }
 
-  const availableCount = tables?.filter((t: any) => t.status === 'AVAILABLE').length || 0;
-  const occupiedCount = tables?.filter((t: any) => t.status === 'OCCUPIED').length || 0;
+  const availableCount = Number(dashboard?.tables?.available || 0);
+  const occupiedCount = Number(dashboard?.tables?.occupied || 0);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Operación Restaurante</h1>
-          <p className="mt-1 text-sm text-slate-500">Mesas, comensales, pedido por mesa, cuenta dividida y cobro por cajero.</p>
+          <p className="mt-1 text-sm text-slate-500">Salón, reservas, KDS, cuenta y cobro por rol.</p>
+        </div>
+        <div className="flex gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">
+          <button
+            onClick={() => setActiveTab('salon')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'salon' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Salón
+          </button>
+          <button
+            onClick={() => setActiveTab('reservas')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'reservas' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Reservas
+          </button>
+          <button
+            onClick={() => setActiveTab('kds')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'kds' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            KDS
+          </button>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <SummaryCard label="Mesas Disponibles" value={`${availableCount}`} icon={<CheckCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
         <SummaryCard label="Mesas Ocupadas" value={`${occupiedCount}`} icon={<Users className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
-        <SummaryCard label="Órdenes Activas" value={`${activeOrders?.length || 0}`} icon={<Utensils className="h-5 w-5" />} tone="bg-blue-50 text-blue-700" />
-        <SummaryCard label="Rol Actual" value={role} icon={<Clock className="h-5 w-5" />} tone="bg-slate-100 text-slate-700" />
+        <SummaryCard
+          label="Reservadas / Pendiente pago"
+          value={`${Number(dashboard?.tables?.reserved || 0)} / ${Number(dashboard?.tables?.pendingPayment || 0)}`}
+          icon={<Utensils className="h-5 w-5" />}
+          tone="bg-blue-50 text-blue-700"
+        />
+        <SummaryCard
+          label="Ventas hoy / Ticket prom."
+          value={`$${Number(dashboard?.sales?.amount || 0).toLocaleString('es-CL')} / $${Math.round(Number(dashboard?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`}
+          icon={<Clock className="h-5 w-5" />}
+          tone="bg-slate-100 text-slate-700"
+        />
       </div>
 
-      {canManageTables && (
+      {activeTab === 'salon' && canManageTables && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-slate-700">Gestión de mesas</h2>
           <div className="flex flex-wrap items-end gap-2">
@@ -324,6 +468,12 @@ export default function RestaurantPage() {
               placeholder="Capacidad"
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
             />
+            <input
+              value={newTableForm.sector}
+              onChange={(e) => setNewTableForm({ ...newTableForm, sector: e.target.value })}
+              placeholder="Sector"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
             <button
               onClick={() => createTableMutation.mutate()}
               disabled={!newTableForm.number || Number(newTableForm.capacity || 0) < 1 || createTableMutation.isPending}
@@ -336,9 +486,22 @@ export default function RestaurantPage() {
         </div>
       )}
 
+      {activeTab === 'salon' && (
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1.4fr]">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-bold text-slate-900">Mapa de mesas</h2>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="text-lg font-bold text-slate-900">Mapa de mesas</h2>
+            <select
+              value={sectorFilter}
+              onChange={(e) => setSectorFilter(e.target.value)}
+              className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+            >
+              <option value="">Todos los sectores</option>
+              {sectors.map((sector) => (
+                <option key={sector} value={sector}>{sector}</option>
+              ))}
+            </select>
+          </div>
           {isLoading ? (
             <p className="text-sm text-slate-500">Cargando mesas...</p>
           ) : (
@@ -346,7 +509,8 @@ export default function RestaurantPage() {
               {(tables || []).map((table: any) => {
                 const isSelected = selectedTableId === table.id;
                 const order = table.currentOrder;
-                const remaining = Number(table.currentAccountSubtotal || 0);
+                const remaining = Number(table.currentAccountRemaining ?? table.currentAccountSubtotal ?? 0);
+                const opStatus = table.operationalStatus || table.status;
 
                 return (
                   <button
@@ -356,13 +520,15 @@ export default function RestaurantPage() {
                       setSelectedOrderId(order?.id || '');
                       setOpenForm((prev) => ({ ...prev, waiterId: order?.waiter?.id || '' }));
                     }}
-                    className={`rounded-xl border-2 p-3 text-left transition ${TABLE_STATUS_COLORS[table.status] || 'bg-slate-50'} ${isSelected ? 'ring-2 ring-indigo-300' : ''}`}
+                    className={`rounded-xl border-2 p-3 text-left transition ${TABLE_STATUS_COLORS[opStatus] || 'bg-slate-50'} ${isSelected ? 'ring-2 ring-indigo-300' : ''}`}
                   >
                     <p className="text-base font-bold">Mesa {table.number}</p>
+                    <p className="text-xs">Sector: {table.sector || 'General'}</p>
                     <p className="text-xs">Capacidad: {table.capacity}</p>
-                    <p className="mt-1 text-xs font-semibold">{TABLE_STATUS_LABELS[table.status] || table.status}</p>
+                    <p className="mt-1 text-xs font-semibold">{TABLE_STATUS_LABELS[opStatus] || opStatus}</p>
                     <p className="mt-1 text-xs">Comensales: {table.currentDiners || 0}</p>
                     <p className="text-xs">Garzón: {order?.waiter ? `${order.waiter.firstName} ${order.waiter.lastName}` : '-'}</p>
+                    <p className="text-xs">Tiempo: {table.elapsedMinutes || 0} min</p>
                     <p className="mt-2 text-xs font-semibold">Saldo: ${remaining.toLocaleString('es-CL')}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {!order && canOperateOrder && (
@@ -518,6 +684,7 @@ export default function RestaurantPage() {
                               value={line.status}
                               onChange={(e) =>
                                 updateItemMutation.mutate({
+                                  orderId: selectedOrderId,
                                   itemId: line.id,
                                   payload: { status: e.target.value },
                                 })
@@ -651,6 +818,226 @@ export default function RestaurantPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {activeTab === 'reservas' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-lg font-bold text-slate-900">Nueva / Editar reserva</h2>
+            <div className="grid gap-2 md:grid-cols-3">
+              <input
+                value={reservationForm.customerName}
+                onChange={(e) => setReservationForm((prev) => ({ ...prev, customerName: e.target.value }))}
+                placeholder="Cliente"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input
+                value={reservationForm.customerPhone}
+                onChange={(e) => setReservationForm((prev) => ({ ...prev, customerPhone: e.target.value }))}
+                placeholder="Telefono"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input
+                type="number"
+                min={1}
+                value={reservationForm.partySize}
+                onChange={(e) => setReservationForm((prev) => ({ ...prev, partySize: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              <input
+                type="datetime-local"
+                value={reservationForm.reservationAt}
+                onChange={(e) => setReservationForm((prev) => ({ ...prev, reservationAt: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+              <select
+                value={reservationForm.tableId}
+                onChange={(e) => setReservationForm((prev) => ({ ...prev, tableId: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="">Sin mesa</option>
+                {(tables || []).map((table: any) => (
+                  <option key={table.id} value={table.id}>
+                    Mesa {table.number} ({table.sector || 'General'})
+                  </option>
+                ))}
+              </select>
+              <select
+                value={reservationForm.status}
+                onChange={(e) => setReservationForm((prev) => ({ ...prev, status: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                {RESERVATION_STATUSES.map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </div>
+            <textarea
+              value={reservationForm.notes}
+              onChange={(e) => setReservationForm((prev) => ({ ...prev, notes: e.target.value }))}
+              rows={2}
+              placeholder="Observaciones"
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => saveReservationMutation.mutate(reservationForm)}
+                disabled={!canManageReservations}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                Guardar reserva
+              </button>
+              <button
+                onClick={() =>
+                  setReservationForm({
+                    customerName: '',
+                    customerPhone: '',
+                    partySize: '2',
+                    reservationAt: new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16),
+                    tableId: '',
+                    status: 'CONFIRMED',
+                    notes: '',
+                  })
+                }
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700"
+              >
+                Limpiar
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-lg font-bold text-slate-900">Reservas activas</h2>
+            <div className="space-y-2">
+              {(reservations || []).map((reservation: any) => (
+                <div key={reservation.id} className="rounded-lg border border-slate-200 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-slate-900">
+                        {reservation.customerName} ({reservation.partySize})
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(reservation.reservationAt).toLocaleString('es-CL')} - {reservation.table ? `Mesa ${reservation.table.number}` : 'Sin mesa'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={reservation.status}
+                        onChange={(e) =>
+                          updateReservationStatusMutation.mutate({
+                            id: reservation.id,
+                            status: e.target.value,
+                          })
+                        }
+                        className="rounded border border-slate-300 px-2 py-1 text-xs"
+                      >
+                        {RESERVATION_STATUSES.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                      {canOperateOrder && ['PENDING', 'CONFIRMED'].includes(reservation.status) && (
+                        <button
+                          onClick={() => seatReservationMutation.mutate(reservation.id)}
+                          className="rounded bg-indigo-600 px-2 py-1 text-xs font-semibold text-white"
+                        >
+                          Sentar
+                        </button>
+                      )}
+                      <button
+                        onClick={() =>
+                          setReservationForm({
+                            id: reservation.id,
+                            customerName: reservation.customerName || '',
+                            customerPhone: reservation.customerPhone || '',
+                            partySize: String(reservation.partySize || 2),
+                            reservationAt: reservation.reservationAt ? new Date(reservation.reservationAt).toISOString().slice(0, 16) : '',
+                            tableId: reservation.tableId || '',
+                            status: reservation.status || 'CONFIRMED',
+                            notes: reservation.notes || '',
+                          })
+                        }
+                        className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700"
+                      >
+                        Editar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(reservations || []).length === 0 && (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  No hay reservas.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'kds' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-lg font-bold text-slate-900">KDS Cocina</h2>
+              <input
+                type="number"
+                min={0}
+                value={kdsMinWait}
+                onChange={(e) => setKdsMinWait(e.target.value)}
+                className="w-24 rounded border border-slate-300 px-2 py-1 text-xs"
+              />
+            </div>
+            <div className="grid gap-3 md:grid-cols-4">
+              <SummaryCard label="Pendientes" value={`${kdsQueue?.summary?.pending || 0}`} icon={<Soup className="h-4 w-4" />} tone="bg-amber-50 text-amber-700" />
+              <SummaryCard label="Preparando" value={`${kdsQueue?.summary?.preparing || 0}`} icon={<Clock className="h-4 w-4" />} tone="bg-blue-50 text-blue-700" />
+              <SummaryCard label="Listos" value={`${kdsQueue?.summary?.ready || 0}`} icon={<CheckCircle className="h-4 w-4" />} tone="bg-emerald-50 text-emerald-700" />
+              <SummaryCard label="Sobre SLA" value={`${kdsQueue?.summary?.overdue || 0}`} icon={<Clock className="h-4 w-4" />} tone="bg-rose-50 text-rose-700" />
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {(kdsQueue?.queue || []).map((order: any) => (
+              <div key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm font-bold text-slate-900">{order.orderNumber} - Mesa {order.table?.number || '-'}</p>
+                <p className="mb-2 text-xs text-slate-500">Espera: {order.waitMinutes} min</p>
+                <div className="space-y-2">
+                  {(order.items || []).map((item: any) => (
+                    <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold">{item.quantity}x {item.productName}</p>
+                        <span className="text-xs text-slate-500">{item.waitMinutes} min</span>
+                      </div>
+                      {canKitchen && (
+                        <select
+                          value={item.status}
+                          onChange={(e) =>
+                            updateItemMutation.mutate({
+                              orderId: order.id,
+                              itemId: item.id,
+                              payload: { status: e.target.value },
+                            })
+                          }
+                          className="mt-2 w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                        >
+                          <option value="PENDING">Pendiente</option>
+                          <option value="PREPARING">Preparando</option>
+                          <option value="READY">Listo</option>
+                          <option value="SERVED">Servido</option>
+                        </select>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          {(kdsQueue?.queue || []).length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+              No hay items en cola con este filtro.
+            </div>
+          )}
+        </div>
+      )}
 
       {showOpenModal && selectedTable && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
@@ -738,3 +1125,6 @@ function StatPill({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+
+

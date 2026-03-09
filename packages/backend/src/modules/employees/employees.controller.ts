@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Query, UseGuards, Request, Param, Body } from '@nestjs/common';
+﻿import { Controller, Get, Post, Put, Delete, Query, UseGuards, Request, Param, Body } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -13,6 +13,8 @@ export class EmployeesController {
       'ADMIN',
       'MANAGER',
       'CASHIER',
+      'SELLER',
+      'STOCKER',
       'WAITER',
       'KITCHEN',
       'VIEWER',
@@ -113,3 +115,5 @@ export class EmployeesController {
     );
   }
 }
+
+

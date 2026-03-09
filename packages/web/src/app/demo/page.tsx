@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -10,29 +10,32 @@ import toast from 'react-hot-toast';
 
 const ROLE_OPTIONS: Record<Exclude<BusinessModule, 'ALL'>, Array<{ id: string; label: string; description: string }>> = {
   RESTAURANT: [
-    { id: 'WAITER', label: 'Garzón', description: 'Atiende mesas, toma pedidos y actualiza comandas.' },
-    { id: 'KITCHEN', label: 'Cocina', description: 'Gestiona preparación y estados de platos.' },
+    { id: 'WAITER', label: 'Garzon', description: 'Atiende mesas, toma pedidos y actualiza comandas.' },
+    { id: 'KITCHEN', label: 'Cocina', description: 'Gestiona preparacion y estados de platos.' },
     { id: 'CASHIER', label: 'Cajero', description: 'Cobra cuentas, maneja caja y cierra mesa.' },
-    { id: 'MANAGER', label: 'Encargado', description: 'Supervisa operación del local.' },
-    { id: 'ADMIN', label: 'Admin', description: 'Control total del módulo.' },
+    { id: 'MANAGER', label: 'Encargado', description: 'Supervisa operacion del local.' },
+    { id: 'ADMIN', label: 'Admin', description: 'Control total del modulo.' },
     { id: 'VIEWER', label: 'Consulta', description: 'Solo lectura y seguimiento operativo.' },
   ],
   MINIMARKET: [
-    { id: 'CASHIER', label: 'Cajero', description: 'Venta rápida y cobro en caja.' },
-    { id: 'MANAGER', label: 'Encargado', description: 'Control de inventario y operación.' },
-    { id: 'ADMIN', label: 'Admin', description: 'Administración completa.' },
+    { id: 'CASHIER', label: 'Cajero', description: 'Venta rapida y cobro en caja.' },
+    { id: 'STOCKER', label: 'Reponedor', description: 'Repone mercaderia, revisa stock critico y ajustes.' },
+    { id: 'MANAGER', label: 'Encargado', description: 'Control de inventario y operacion.' },
+    { id: 'ADMIN', label: 'Admin', description: 'Administracion completa.' },
     { id: 'VIEWER', label: 'Consulta', description: 'Solo lectura.' },
   ],
   BOTILLERIA: [
-    { id: 'CASHIER', label: 'Cajero', description: 'Cobro y validación en punto de venta.' },
-    { id: 'MANAGER', label: 'Encargado', description: 'Control de catálogo y stock.' },
-    { id: 'ADMIN', label: 'Admin', description: 'Administración completa.' },
+    { id: 'CASHIER', label: 'Cajero', description: 'Cobro y validacion en punto de venta.' },
+    { id: 'SELLER', label: 'Vendedor', description: 'Arma packs, aplica promociones y vende categorias premium.' },
+    { id: 'MANAGER', label: 'Encargado', description: 'Control de catalogo y stock.' },
+    { id: 'ADMIN', label: 'Admin', description: 'Administracion completa.' },
     { id: 'VIEWER', label: 'Consulta', description: 'Solo lectura.' },
   ],
   BOOKSTORE: [
     { id: 'CASHIER', label: 'Cajero', description: 'Ventas y comprobantes.' },
-    { id: 'MANAGER', label: 'Encargado', description: 'Gestión comercial y operación.' },
-    { id: 'ADMIN', label: 'Admin', description: 'Administración completa.' },
+    { id: 'SELLER', label: 'Vendedor', description: 'Gestiona campanas escolares, combos y venta asistida.' },
+    { id: 'MANAGER', label: 'Encargado', description: 'Gestion comercial y operacion.' },
+    { id: 'ADMIN', label: 'Admin', description: 'Administracion completa.' },
     { id: 'VIEWER', label: 'Consulta', description: 'Solo lectura.' },
   ],
 };
@@ -68,9 +71,9 @@ export default function DemoPage() {
         <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Demo guiada</p>
-            <h1 className="text-4xl font-black text-slate-900">Elige módulo y perfil operativo</h1>
+            <h1 className="text-4xl font-black text-slate-900">Elige modulo y perfil operativo</h1>
             <p className="mt-2 text-sm text-slate-600">
-              Inicias con datos de operación realista por rubro y rol.
+              Inicias con datos de operacion realista por rubro y rol.
             </p>
           </div>
           <Link href="/" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold hover:bg-white">
@@ -109,7 +112,7 @@ export default function DemoPage() {
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
             <ShieldCheck className="h-4 w-4 text-indigo-600" />
-            Selecciona perfil para explorar operación por rol
+            Selecciona perfil para explorar operacion por rol
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -133,10 +136,10 @@ export default function DemoPage() {
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-5">
           <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-700">
             <FlaskConical className="h-4 w-4 text-indigo-600" />
-            Credenciales demo generadas automáticamente
+            Credenciales demo generadas automaticamente
           </div>
           <p className="text-sm text-slate-600">
-            El acceso demo no altera datos productivos. Puedes cambiar módulo y perfil cuando quieras.
+            El acceso demo no altera datos productivos. Puedes cambiar modulo y perfil cuando quieras.
           </p>
           <button
             onClick={startDemo}
@@ -151,3 +154,5 @@ export default function DemoPage() {
     </div>
   );
 }
+
+

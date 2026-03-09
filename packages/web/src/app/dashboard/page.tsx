@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { useMemo, type ReactNode } from 'react';
@@ -7,18 +7,17 @@ import {
   AlertTriangle,
   ArrowRight,
   Banknote,
+  BarChart3,
+  BookOpen,
   Clock,
   DollarSign,
-  Gift,
+  Flame,
   Package,
-  Repeat,
-  Shield,
   ShoppingCart,
   Sparkles,
-  Star,
-  Truck,
-  Users,
-  Wallet,
+  Store,
+  UtensilsCrossed,
+  Wine,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { MODULES } from '@/lib/modules';
@@ -29,39 +28,39 @@ const MODULE_WIDGETS: Record<
   { title: string; description: string; links: { label: string; href: string }[] }
 > = {
   RESTAURANT: {
-    title: 'Operacion de salon y cocina',
-    description: 'Controla mesas activas, tiempos de servicio y rotacion de turnos.',
+    title: 'Operacion de salon, cocina y caja restaurante',
+    description: 'Gestion de mesas, reservas, KDS, pre-cuenta y cobro desde flujo restaurante.',
     links: [
-      { label: 'Ver mesas y ordenes', href: '/dashboard/restaurant' },
-      { label: 'Delivery', href: '/dashboard/delivery' },
-      { label: 'Registrar nueva venta', href: '/dashboard/sales' },
+      { label: 'Salon, reservas y KDS', href: '/dashboard/restaurant' },
+      { label: 'Cobros y caja', href: '/dashboard/cash-register' },
+      { label: 'Reporte operativo', href: '/dashboard/reports' },
     ],
   },
   MINIMARKET: {
-    title: 'Rotacion retail diaria',
-    description: 'Monitorea productos criticos, ventas por horario y reposicion sugerida.',
+    title: 'Operacion retail de alta rotacion',
+    description: 'Caja rapida, reposicion sugerida, stock critico y control por cajero/turno.',
     links: [
-      { label: 'Revisar inventario', href: '/dashboard/inventory' },
-      { label: 'Transferencias', href: '/dashboard/transfers' },
-      { label: 'Gestionar productos', href: '/dashboard/products' },
+      { label: 'Venta rapida', href: '/dashboard/sales' },
+      { label: 'Inventario operativo', href: '/dashboard/inventory' },
+      { label: 'Caja y turnos', href: '/dashboard/cash-register' },
     ],
   },
   BOTILLERIA: {
-    title: 'Catalogo especializado y promociones',
-    description: 'Prioriza mix de vinos/destilados y controla stock de alta rotacion.',
+    title: 'Operacion especializada botilleria',
+    description: 'Packs promocionales, validacion etaria, horario de venta y categorias alcoholicas top.',
     links: [
-      { label: 'Gestionar productos', href: '/dashboard/products' },
-      { label: 'Promociones', href: '/dashboard/promotions' },
-      { label: 'Ver reportes', href: '/dashboard/reports' },
+      { label: 'Venta con validaciones', href: '/dashboard/sales' },
+      { label: 'Promociones y packs', href: '/dashboard/promotions' },
+      { label: 'Reporte comercial', href: '/dashboard/reports' },
     ],
   },
   BOOKSTORE: {
-    title: 'Temporadas escolares y bazar',
-    description: 'Sigue el rendimiento por categorias, packs y productos de temporada.',
+    title: 'Operacion por catalogo y temporada',
+    description: 'Campanas escolares, combos de oficina y rendimiento por categorias de libreria.',
     links: [
-      { label: 'Gestionar catalogo', href: '/dashboard/products' },
-      { label: 'Apartados', href: '/dashboard/layaway' },
-      { label: 'Ver clientes', href: '/dashboard/customers' },
+      { label: 'Venta y campañas', href: '/dashboard/sales' },
+      { label: 'Catalogo e inventario', href: '/dashboard/products' },
+      { label: 'Reportes por categoria', href: '/dashboard/reports' },
     ],
   },
 };
@@ -82,33 +81,204 @@ export default function DashboardPage() {
     queryFn: () => api.get('/products/low-stock').then((res) => res.data),
   });
 
-  const { data: expiring } = useQuery({
-    queryKey: ['expiring'],
-    queryFn: () => api.get('/products/expiring').then((res) => res.data),
-  });
-
   const { data: cashRegister } = useQuery({
     queryKey: ['cash-register-current'],
     queryFn: () => api.get('/cash-register/current').then((res) => res.data).catch(() => null),
   });
 
-  const { data: promotions } = useQuery({
-    queryKey: ['promotions-active'],
-    queryFn: () => api.get('/promotions/active').then((res) => res.data).catch(() => []),
+  const { data: moduleOverview } = useQuery({
+    queryKey: ['module-overview', moduleType],
+    queryFn: async () => {
+      if (moduleType === 'RESTAURANT') {
+        return api.get('/restaurant/dashboard').then((res) => res.data);
+      }
+      if (moduleType === 'MINIMARKET') {
+        return api.get('/minimarket/dashboard').then((res) => res.data);
+      }
+      if (moduleType === 'BOTILLERIA') {
+        return api.get('/botilleria/dashboard').then((res) => res.data);
+      }
+      if (moduleType === 'BOOKSTORE') {
+        return api.get('/bookstore/dashboard').then((res) => res.data);
+      }
+      return null;
+    },
+    enabled: moduleType !== 'ALL',
   });
 
-  const { data: customers } = useQuery({
-    queryKey: ['customers'],
-    queryFn: () => api.get('/customers').then((res) => res.data).catch(() => []),
-  });
-
+  const isRegisterOpen = !!(cashRegister && !cashRegister.closedAt);
   const revenue = useMemo(() => Number(dailySales?.totalSales || 0), [dailySales?.totalSales]);
-  const topSales = useMemo(() => (dailySales?.sales || []).slice(0, 6), [dailySales?.sales]);
-  const isRegisterOpen = cashRegister && !cashRegister.closedAt;
+
+  const cards = useMemo(() => {
+    if (moduleType === 'RESTAURANT') {
+      return [
+        {
+          title: 'Mesas libres / ocupadas',
+          value: `${Number(moduleOverview?.tables?.available || 0)} / ${Number(moduleOverview?.tables?.occupied || 0)}`,
+          subtitle: `Reservadas: ${Number(moduleOverview?.tables?.reserved || 0)}`,
+          icon: <UtensilsCrossed className="h-5 w-5" />,
+          tone: 'bg-orange-50 text-orange-700',
+        },
+        {
+          title: 'Ventas del dia',
+          value: `$${Number(moduleOverview?.sales?.amount || 0).toLocaleString('es-CL')}`,
+          subtitle: `Ticket prom.: $${Math.round(Number(moduleOverview?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`,
+          icon: <DollarSign className="h-5 w-5" />,
+          tone: 'bg-emerald-50 text-emerald-700',
+        },
+        {
+          title: 'Pedidos abiertos',
+          value: `${Number(moduleOverview?.kitchen?.openOrders || 0)}`,
+          subtitle: `Atrasados: ${Number(moduleOverview?.kitchen?.lateItems || 0)}`,
+          icon: <Clock className="h-5 w-5" />,
+          tone: 'bg-amber-50 text-amber-700',
+        },
+        {
+          title: 'Estado cocina',
+          value: `${Number(moduleOverview?.kitchen?.pendingItems || 0)} pendientes`,
+          subtitle: `${Number(moduleOverview?.kitchen?.readyItems || 0)} listos`,
+          icon: <BarChart3 className="h-5 w-5" />,
+          tone: 'bg-red-50 text-red-700',
+        },
+      ];
+    }
+
+    if (moduleType === 'MINIMARKET') {
+      const topCashier = moduleOverview?.salesByCashier?.[0];
+      return [
+        {
+          title: 'Ventas de hoy',
+          value: `${Number(moduleOverview?.sales?.count || dailySales?.salesCount || 0)}`,
+          subtitle: `Ingresos: $${Number(moduleOverview?.sales?.amount || revenue).toLocaleString('es-CL')}`,
+          icon: <ShoppingCart className="h-5 w-5" />,
+          tone: 'bg-emerald-50 text-emerald-700',
+        },
+        {
+          title: 'Stock critico',
+          value: `${Number(moduleOverview?.stock?.criticalCount || 0)}`,
+          subtitle: 'Productos para reposicion',
+          icon: <AlertTriangle className="h-5 w-5" />,
+          tone: 'bg-rose-50 text-rose-700',
+        },
+        {
+          title: 'Aperturas / cierres',
+          value: `${Number(moduleOverview?.cash?.openRegisters || 0)} / ${Number(moduleOverview?.cash?.closedRegisters || 0)}`,
+          subtitle: 'Turnos de caja hoy',
+          icon: <Banknote className="h-5 w-5" />,
+          tone: 'bg-blue-50 text-blue-700',
+        },
+        {
+          title: 'Top cajero',
+          value: topCashier?.name || 'Sin datos',
+          subtitle: topCashier ? `$${Number(topCashier.amount || 0).toLocaleString('es-CL')}` : 'Sin ventas hoy',
+          icon: <Store className="h-5 w-5" />,
+          tone: 'bg-indigo-50 text-indigo-700',
+        },
+      ];
+    }
+
+    if (moduleType === 'BOTILLERIA') {
+      const topCategory = moduleOverview?.categories?.topAlcoholCategories?.[0];
+      return [
+        {
+          title: 'Ventas del dia',
+          value: `$${Number(moduleOverview?.sales?.totalAmount || revenue).toLocaleString('es-CL')}`,
+          subtitle: `${Number(moduleOverview?.sales?.totalSales || dailySales?.salesCount || 0)} transacciones`,
+          icon: <Wine className="h-5 w-5" />,
+          tone: 'bg-red-50 text-red-700',
+        },
+        {
+          title: 'Ticket promedio',
+          value: `$${Math.round(Number(moduleOverview?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`,
+          subtitle: 'Comportamiento comercial',
+          icon: <DollarSign className="h-5 w-5" />,
+          tone: 'bg-amber-50 text-amber-700',
+        },
+        {
+          title: 'Packs/promos activas',
+          value: `${Number(moduleOverview?.promotions?.activeCount || 0)}`,
+          subtitle: 'Promociones botilleria',
+          icon: <Sparkles className="h-5 w-5" />,
+          tone: 'bg-orange-50 text-orange-700',
+        },
+        {
+          title: 'Categoria top',
+          value: topCategory?.category || 'Sin datos',
+          subtitle: topCategory ? `${topCategory.units} unidades` : 'Sin movimientos',
+          icon: <Flame className="h-5 w-5" />,
+          tone: 'bg-pink-50 text-pink-700',
+        },
+      ];
+    }
+
+    if (moduleType === 'BOOKSTORE') {
+      const topCategory = moduleOverview?.categories?.[0];
+      return [
+        {
+          title: 'Ventas del dia',
+          value: `$${Number(moduleOverview?.sales?.amount || revenue).toLocaleString('es-CL')}`,
+          subtitle: `${Number(moduleOverview?.sales?.count || dailySales?.salesCount || 0)} tickets`,
+          icon: <BookOpen className="h-5 w-5" />,
+          tone: 'bg-blue-50 text-blue-700',
+        },
+        {
+          title: 'Categoria lider',
+          value: topCategory?.category || 'Sin datos',
+          subtitle: topCategory ? `$${Number(topCategory.revenue || 0).toLocaleString('es-CL')}` : 'Sin ventas',
+          icon: <BarChart3 className="h-5 w-5" />,
+          tone: 'bg-indigo-50 text-indigo-700',
+        },
+        {
+          title: 'Campanas activas',
+          value: `${Number(moduleOverview?.campaigns?.length || 0)}`,
+          subtitle: moduleOverview?.season || 'Temporada actual',
+          icon: <Sparkles className="h-5 w-5" />,
+          tone: 'bg-violet-50 text-violet-700',
+        },
+        {
+          title: 'Stock critico',
+          value: `${Number(moduleOverview?.stock?.criticalCount || lowStock?.length || 0)}`,
+          subtitle: 'Productos por reponer',
+          icon: <Package className="h-5 w-5" />,
+          tone: 'bg-rose-50 text-rose-700',
+        },
+      ];
+    }
+
+    return [
+      {
+        title: 'Ventas del dia',
+        value: `${Number(dailySales?.salesCount || 0)}`,
+        subtitle: `Ingresos: $${Number(revenue).toLocaleString('es-CL')}`,
+        icon: <ShoppingCart className="h-5 w-5" />,
+        tone: 'bg-emerald-50 text-emerald-700',
+      },
+      {
+        title: 'Stock bajo',
+        value: `${Number(lowStock?.length || 0)}`,
+        subtitle: 'Items criticos',
+        icon: <AlertTriangle className="h-5 w-5" />,
+        tone: 'bg-rose-50 text-rose-700',
+      },
+      {
+        title: 'Caja actual',
+        value: isRegisterOpen ? 'Abierta' : 'Cerrada',
+        subtitle: 'Estado de turno',
+        icon: <Banknote className="h-5 w-5" />,
+        tone: 'bg-blue-50 text-blue-700',
+      },
+      {
+        title: 'Modulo activo',
+        value: moduleMeta.name,
+        subtitle: 'Contexto operativo',
+        icon: <Sparkles className="h-5 w-5" />,
+        tone: 'bg-indigo-50 text-indigo-700',
+      },
+    ];
+  }, [moduleType, moduleOverview, dailySales, revenue, lowStock, isRegisterOpen, moduleMeta.name]);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -126,80 +296,26 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      {/* Main KPI Cards */}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title="Ventas del dia"
-          value={`${dailySales?.salesCount || 0}`}
-          subtitle="Transacciones completadas"
-          icon={<ShoppingCart className="h-5 w-5" />}
-          tone="bg-sky-50 text-sky-700"
-        />
-        <StatCard
-          title="Ingresos del dia"
-          value={`$${revenue.toLocaleString('es-CL')}`}
-          subtitle="Monto bruto de ventas"
-          icon={<DollarSign className="h-5 w-5" />}
-          tone="bg-emerald-50 text-emerald-700"
-        />
-        <StatCard
-          title="Productos con stock bajo"
-          value={`${lowStock?.length || 0}`}
-          subtitle="Prioridad de reposicion"
-          icon={<Package className="h-5 w-5" />}
-          tone="bg-amber-50 text-amber-700"
-        />
-        <StatCard
-          title="Productos por vencer"
-          value={`${expiring?.length || 0}`}
-          subtitle="Control de caducidad"
-          icon={<AlertTriangle className="h-5 w-5" />}
-          tone="bg-rose-50 text-rose-700"
-        />
+        {cards.map((card) => (
+          <StatCard
+            key={card.title}
+            title={card.title}
+            value={card.value}
+            subtitle={card.subtitle}
+            icon={card.icon}
+            tone={card.tone}
+          />
+        ))}
       </section>
 
-      {/* Secondary Stats Row */}
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MiniCard
-          icon={<Banknote className="h-4 w-4" />}
-          label="Estado Caja"
-          value={isRegisterOpen ? 'Abierta' : 'Cerrada'}
-          color={isRegisterOpen ? 'text-emerald-600' : 'text-red-600'}
-          href="/dashboard/cash-register"
-        />
-        <MiniCard
-          icon={<Gift className="h-4 w-4" />}
-          label="Promociones Activas"
-          value={`${promotions?.length || 0}`}
-          href="/dashboard/promotions"
-        />
-        <MiniCard
-          icon={<Users className="h-4 w-4" />}
-          label="Clientes Registrados"
-          value={`${customers?.length || 0}`}
-          href="/dashboard/customers"
-        />
-        <MiniCard
-          icon={<Star className="h-4 w-4" />}
-          label="Fidelizacion"
-          value="Ver puntos"
-          href="/dashboard/loyalty"
-        />
-      </section>
-
-      {/* Quick Access Grid */}
       <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
-        <QuickLink href="/dashboard/cash-register" icon={<Banknote className="h-5 w-5" />} label="Caja" color="bg-emerald-50 text-emerald-700" />
-        <QuickLink href="/dashboard/employees" icon={<Clock className="h-5 w-5" />} label="Empleados" color="bg-blue-50 text-blue-700" />
-        <QuickLink href="/dashboard/transfers" icon={<Repeat className="h-5 w-5" />} label="Transferencias" color="bg-indigo-50 text-indigo-700" />
-        <QuickLink href="/dashboard/invoices" icon={<DollarSign className="h-5 w-5" />} label="Facturacion" color="bg-purple-50 text-purple-700" />
-        <QuickLink href="/dashboard/delivery" icon={<Truck className="h-5 w-5" />} label="Delivery" color="bg-orange-50 text-orange-700" />
-        <QuickLink href="/dashboard/layaway" icon={<Wallet className="h-5 w-5" />} label="Apartados" color="bg-pink-50 text-pink-700" />
-        <QuickLink href="/dashboard/fraud" icon={<Shield className="h-5 w-5" />} label="Alertas Fraude" color="bg-red-50 text-red-700" />
-        <QuickLink href="/dashboard/ai" icon={<Sparkles className="h-5 w-5" />} label="IA Avanzada" color="bg-violet-50 text-violet-700" />
+        <QuickLink href="/dashboard/sales" icon={<ShoppingCart className="h-5 w-5" />} label="Ventas" color="bg-emerald-50 text-emerald-700" />
+        <QuickLink href="/dashboard/cash-register" icon={<Banknote className="h-5 w-5" />} label="Caja" color="bg-blue-50 text-blue-700" />
+        <QuickLink href="/dashboard/inventory" icon={<Package className="h-5 w-5" />} label="Inventario" color="bg-amber-50 text-amber-700" />
+        <QuickLink href="/dashboard/reports" icon={<BarChart3 className="h-5 w-5" />} label="Reportes" color="bg-indigo-50 text-indigo-700" />
       </section>
 
-      {/* Module Widget */}
       {moduleWidget && (
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Foco del modulo</p>
@@ -219,32 +335,6 @@ export default function DashboardPage() {
           </div>
         </section>
       )}
-
-      {/* Recent Sales */}
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-slate-900">Ventas recientes</h2>
-          <Link href="/dashboard/sales" className="text-sm font-semibold text-indigo-600 hover:text-indigo-500">
-            Ver todas
-          </Link>
-        </div>
-
-        {topSales.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
-            Aun no hay ventas registradas para hoy.
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            {topSales.map((sale: any) => (
-              <div key={sale.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">{sale.saleNumber}</p>
-                <p className="text-xs text-slate-500">{new Date(sale.createdAt).toLocaleString('es-CL')}</p>
-                <p className="mt-2 text-lg font-bold text-slate-900">${Number(sale.total).toLocaleString('es-CL')}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
     </div>
   );
 }
@@ -276,33 +366,6 @@ function StatCard({
   );
 }
 
-function MiniCard({
-  icon,
-  label,
-  value,
-  color,
-  href,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  color?: string;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-200 hover:shadow-md"
-    >
-      <div className="rounded-lg bg-slate-100 p-2 text-slate-600">{icon}</div>
-      <div>
-        <p className="text-xs text-slate-500">{label}</p>
-        <p className={`font-bold ${color || 'text-slate-900'}`}>{value}</p>
-      </div>
-    </Link>
-  );
-}
-
 function QuickLink({
   href,
   icon,
@@ -325,3 +388,5 @@ function QuickLink({
     </Link>
   );
 }
+
+

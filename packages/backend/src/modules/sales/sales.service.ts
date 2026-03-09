@@ -1,7 +1,14 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { ProductsService } from '../products/products.service';
-import { ISaleCreate, SaleStatus, StockMovementType, InputMethod, ProductStatus } from '@martin-pos/shared';
+import {
+  ISaleCreate,
+  SaleStatus,
+  StockMovementType,
+  InputMethod,
+  ProductStatus,
+  PaymentMethod,
+} from '@martin-pos/shared';
 import { calculateSaleTotal } from '@martin-pos/shared';
 
 @Injectable()
@@ -24,11 +31,13 @@ export class SalesService {
     // Get branch config for tax rate
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
+      select: { moduleType: true, config: true },
     });
-    const taxRate = (branch?.config as any)?.taxRate || 0.19;
+    const taxRate = Number((branch?.config as any)?.taxRate || 0.19);
     const branchModule = branch?.moduleType;
 
     if (branchModule === 'BOTILLERIA') {
+      await this.assertBotilleriaSaleHours(branchId);
       const productIds = data.items.map((item) => item.productId);
       const alcoholicCount = await this.prisma.alcoholicProduct.count({
         where: {
@@ -37,14 +46,33 @@ export class SalesService {
       });
 
       if (alcoholicCount > 0 && !data.ageVerified) {
-        throw new BadRequestException('Debe validar mayoría de edad para vender productos alcohólicos');
+        throw new BadRequestException('Debe validar mayoria de edad para vender productos alcoholicos');
       }
     }
 
+    const promotion = data.promotionId
+      ? await this.prisma.promotion.findFirst({
+          where: {
+            id: data.promotionId,
+            branchId,
+            isActive: true,
+            startDate: { lte: new Date() },
+            endDate: { gte: new Date() },
+          },
+          include: { comboProducts: true },
+        })
+      : null;
+
+    if (data.promotionId && !promotion) {
+      throw new BadRequestException('La promocion seleccionada no esta activa');
+    }
+
+    const stockInputMethod = this.normalizeInputMethod(data.inputMethod);
+
     // All stock validation and mutation inside a single transaction
-    const sale = await this.prisma.$transaction(async (tx) => {
+    const { sale, paymentPlan } = await this.prisma.$transaction(async (tx) => {
       // Validate stock inside transaction to prevent race conditions
-      const saleItems = [];
+      const saleItems: any[] = [];
       let subtotal = 0;
 
       for (const item of data.items) {
@@ -63,7 +91,7 @@ export class SalesService {
         }
 
         const itemSubtotal = item.quantity * Number(item.unitPrice);
-        const itemDiscount = item.discount || 0;
+        const itemDiscount = Number(item.discount || 0);
         const itemTax = product.taxable ? ((itemSubtotal - itemDiscount) * taxRate) : 0;
         const itemTotal = itemSubtotal - itemDiscount + itemTax;
         subtotal += itemSubtotal;
@@ -84,11 +112,18 @@ export class SalesService {
       const autoBookstoreDiscount =
         branchModule === 'BOOKSTORE' && totalUnits >= 5 ? Math.round(subtotal * 0.05) : 0;
       const requestedDiscount = Number(data.discount || 0);
-      const effectiveDiscount = requestedDiscount + autoBookstoreDiscount;
+      const promotionDiscount = this.calculatePromotionDiscount(promotion as any, saleItems, subtotal);
+      const effectiveDiscount = requestedDiscount + autoBookstoreDiscount + promotionDiscount;
       const totals = calculateSaleTotal(subtotal, taxRate, effectiveDiscount);
+
+      const paymentPlan = this.resolvePayments(data, Number(totals.total));
+
       const saleNotes = [
         data.notes,
-        autoBookstoreDiscount > 0 ? 'Descuento automático librería aplicado (5%)' : null,
+        autoBookstoreDiscount > 0 ? 'Descuento automatico libreria aplicado (5%)' : null,
+        promotion ? `Promocion aplicada: ${promotion.name}` : null,
+        data.packName ? `Pack botilleria: ${data.packName}` : null,
+        data.campaignTag ? `Campana: ${data.campaignTag}` : null,
       ]
         .filter(Boolean)
         .join(' | ');
@@ -105,7 +140,7 @@ export class SalesService {
           tax: totals.tax,
           discount: totals.discount,
           total: totals.total,
-          paymentMethod: data.paymentMethod,
+          paymentMethod: paymentPlan.salePaymentMethod,
           notes: saleNotes || undefined,
           tableId: data.tableId,
           orderId: data.orderId,
@@ -150,12 +185,12 @@ export class SalesService {
             previousStock,
             newStock,
             referenceId: newSale.id,
-            inputMethod: InputMethod.MANUAL,
+            inputMethod: stockInputMethod,
           },
         });
       }
 
-      return newSale;
+      return { sale: newSale, paymentPlan };
     });
 
     const openRegister = await this.prisma.cashRegister.findFirst({
@@ -165,17 +200,19 @@ export class SalesService {
 
     if (openRegister) {
       await this.prisma.$transaction([
-        this.prisma.cashTransaction.create({
-          data: {
-            cashRegisterId: openRegister.id,
-            userId,
-            type: 'INCOME',
-            amount: sale.total,
-            paymentMethod: data.paymentMethod as any,
-            description: `Venta ${sale.saleNumber}`,
-            saleId: sale.id,
-          },
-        }),
+        ...paymentPlan.payments.map((payment) =>
+          this.prisma.cashTransaction.create({
+            data: {
+              cashRegisterId: openRegister.id,
+              userId,
+              type: 'INCOME',
+              amount: payment.amount,
+              paymentMethod: payment.paymentMethod as any,
+              description: `Venta ${sale.saleNumber}`,
+              saleId: sale.id,
+            },
+          })
+        ),
         this.prisma.cashRegister.update({
           where: { id: openRegister.id },
           data: {
@@ -222,6 +259,7 @@ export class SalesService {
             id: true,
             firstName: true,
             lastName: true,
+            role: true,
           },
         },
       },
@@ -246,9 +284,11 @@ export class SalesService {
             firstName: true,
             lastName: true,
             email: true,
+            role: true,
           },
         },
         branch: true,
+        cashTransactions: true,
       },
     });
 
@@ -326,17 +366,56 @@ export class SalesService {
           lte: endOfDay,
         },
       },
-      include: { items: true },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                categoryId: true,
+              },
+            },
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+      },
     });
 
     const totalSales = sales.reduce((sum, sale) => sum + Number(sale.total), 0);
     const totalItems = sales.reduce((sum, sale) => sum + sale.items.length, 0);
+
+    const salesByCashier = sales.reduce((acc, sale) => {
+      const userKey = sale.userId;
+      const name = sale.user ? `${sale.user.firstName} ${sale.user.lastName}` : 'Sin usuario';
+      if (!acc[userKey]) {
+        acc[userKey] = {
+          userId: userKey,
+          name,
+          role: sale.user?.role || 'CASHIER',
+          count: 0,
+          amount: 0,
+        };
+      }
+      acc[userKey].count += 1;
+      acc[userKey].amount += Number(sale.total);
+      return acc;
+    }, {} as Record<string, { userId: string; name: string; role: string; count: number; amount: number }>);
 
     return {
       date: targetDate,
       totalSales,
       salesCount: sales.length,
       totalItems,
+      averageTicket: sales.length > 0 ? totalSales / sales.length : 0,
+      salesByCashier: Object.values(salesByCashier).sort((a, b) => b.amount - a.amount),
       sales,
     };
   }
@@ -352,4 +431,108 @@ export class SalesService {
 
     return `SALE-${year}-${sequence.toString().padStart(5, '0')}`;
   }
+
+  private normalizeInputMethod(method?: string): InputMethod {
+    if (!method) {
+      return InputMethod.MANUAL;
+    }
+
+    const value = String(method).toUpperCase();
+    if (Object.values(InputMethod).includes(value as InputMethod)) {
+      return value as InputMethod;
+    }
+
+    return InputMethod.MANUAL;
+  }
+
+  private resolvePayments(data: ISaleCreate, totalAmount: number) {
+    const requestedPayments = (data.payments || [])
+      .map((payment) => ({
+        paymentMethod: payment.paymentMethod,
+        amount: Number(payment.amount || 0),
+      }))
+      .filter((payment) => payment.amount > 0);
+
+    const payments =
+      requestedPayments.length > 0
+        ? requestedPayments
+        : [{ paymentMethod: data.paymentMethod || PaymentMethod.CASH, amount: Number(totalAmount) }];
+
+    const roundedTotal = Math.round(Number(totalAmount));
+    const roundedPayments = Math.round(payments.reduce((sum, payment) => sum + Number(payment.amount), 0));
+
+    if (roundedPayments !== roundedTotal) {
+      throw new BadRequestException('Los pagos registrados no coinciden con el total de la venta');
+    }
+
+    const salePaymentMethod =
+      payments.length > 1 ? PaymentMethod.MIXED : (payments[0]?.paymentMethod || data.paymentMethod);
+
+    return {
+      payments,
+      salePaymentMethod,
+    };
+  }
+
+  private calculatePromotionDiscount(promotion: any, saleItems: any[], subtotal: number): number {
+    if (!promotion) {
+      return 0;
+    }
+
+    const conditions = (promotion.conditions as any) || {};
+    const minSubtotal = Number(conditions.minSubtotal || 0);
+    if (minSubtotal > 0 && subtotal < minSubtotal) {
+      throw new BadRequestException(`La promocion requiere una compra minima de $${minSubtotal.toLocaleString('es-CL')}`);
+    }
+
+    if (promotion.type === 'COMBO' && Array.isArray(promotion.comboProducts) && promotion.comboProducts.length > 0) {
+      const cartByProduct = saleItems.reduce((acc, item) => {
+        acc[item.productId] = (acc[item.productId] || 0) + Number(item.quantity || 0);
+        return acc;
+      }, {} as Record<string, number>);
+
+      const meetsCombo = promotion.comboProducts.every((comboProduct: any) => {
+        const required = Number(comboProduct.quantity || 1);
+        const inCart = Number(cartByProduct[comboProduct.productId] || 0);
+        return inCart >= required;
+      });
+
+      if (!meetsCombo) {
+        throw new BadRequestException('La venta no cumple con los productos requeridos para el combo');
+      }
+    }
+
+    if (promotion.discountType === 'PERCENTAGE') {
+      return Math.min(subtotal, Math.round((subtotal * Number(promotion.discountValue || 0)) / 100));
+    }
+
+    return Math.min(subtotal, Number(promotion.discountValue || 0));
+  }
+
+  private async assertBotilleriaSaleHours(branchId: string) {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')}`;
+
+    const restriction = await this.prisma.saleHoursRestriction.findUnique({
+      where: {
+        branchId_dayOfWeek: { branchId, dayOfWeek },
+      },
+    });
+
+    if (!restriction || !restriction.isEnabled) {
+      return;
+    }
+
+    if (currentTime < restriction.openTime || currentTime > restriction.closeTime) {
+      throw new BadRequestException(
+        `Venta de alcohol no permitida en este horario. Horario permitido: ${restriction.openTime} - ${restriction.closeTime}`
+      );
+    }
+  }
 }
+
+

@@ -1,4 +1,4 @@
-import {
+﻿import {
   Injectable,
   NotFoundException,
   BadRequestException,
@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../../database/prisma.service';
 import { SalesService } from '../sales/sales.service';
 import { PaymentMethod } from '@martin-pos/shared';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, ReservationStatus } from '@prisma/client';
 
 const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['PENDING', 'PREPARING', 'READY'];
 const CASHIER_ALLOWED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'];
@@ -70,6 +70,25 @@ export class RestaurantService {
     return order;
   }
 
+  private async ensureReservation(reservationId: string, branchId: string) {
+    const reservation = await this.prisma.reservation.findFirst({
+      where: {
+        id: reservationId,
+        branchId,
+        deletedAt: null,
+      },
+      include: {
+        table: true,
+      },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reserva no encontrada');
+    }
+
+    return reservation;
+  }
+
   private ensureCashierRole(role: string) {
     if (!CASHIER_ALLOWED_ROLES.includes(role)) {
       throw new ForbiddenException('No tiene permisos para cobrar esta cuenta');
@@ -89,9 +108,62 @@ export class RestaurantService {
     return `ORD-${String(seq + 1).padStart(5, '0')}`;
   }
 
-  async getTables(branchId: string) {
+  private async syncTableReservationStatus(tableId: string, branchId: string) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, branchId, deletedAt: null },
+      select: { id: true, status: true },
+    });
+
+    if (!table) return;
+
+    const hasActiveOrder = await this.prisma.order.findFirst({
+      where: {
+        tableId,
+        branchId,
+        deletedAt: null,
+        status: { in: ACTIVE_ORDER_STATUSES },
+      },
+      select: { id: true },
+    });
+
+    if (hasActiveOrder) return;
+
+    const hasUpcomingReservation = await this.prisma.reservation.findFirst({
+      where: {
+        branchId,
+        tableId,
+        deletedAt: null,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        reservationAt: {
+          gte: new Date(Date.now() - 6 * 60 * 60 * 1000),
+        },
+      },
+      select: { id: true },
+    });
+
+    if (hasUpcomingReservation && table.status === 'AVAILABLE') {
+      await this.prisma.table.update({
+        where: { id: table.id },
+        data: { status: 'RESERVED' },
+      });
+      return;
+    }
+
+    if (!hasUpcomingReservation && table.status === 'RESERVED') {
+      await this.prisma.table.update({
+        where: { id: table.id },
+        data: { status: 'AVAILABLE' },
+      });
+    }
+  }
+
+  async getTables(branchId: string, filters?: { sector?: string }) {
     const tables: any[] = await this.prisma.table.findMany({
-      where: { branchId, deletedAt: null },
+      where: {
+        branchId,
+        deletedAt: null,
+        ...(filters?.sector ? { sector: filters.sector } : {}),
+      },
       include: {
         orders: {
           where: {
@@ -122,6 +194,14 @@ export class RestaurantService {
             createdAt: 'desc',
           },
         },
+        reservations: {
+          where: {
+            deletedAt: null,
+            status: { in: ['PENDING', 'CONFIRMED'] },
+          },
+          orderBy: { reservationAt: 'asc' },
+          take: 3,
+        },
       },
       orderBy: { number: 'asc' },
     });
@@ -132,16 +212,567 @@ export class RestaurantService {
         (sum, item) => sum + Number(item.unitPrice) * Number(item.quantity),
         0,
       );
+      const paidSubtotal = (currentOrder?.items || []).reduce(
+        (sum, item) => sum + Number(item.unitPrice) * Number(item.paidQuantity || 0),
+        0,
+      );
+      const remainingSubtotal = Math.max(0, itemsSubtotal - paidSubtotal);
+      const openedAt = table.openedAt ? new Date(table.openedAt) : null;
+      const elapsedMinutes = openedAt
+        ? Math.max(0, Math.floor((Date.now() - openedAt.getTime()) / (1000 * 60)))
+        : 0;
+
+      let operationalStatus = table.status;
+      if (currentOrder && remainingSubtotal > 0 && ['READY', 'SERVED'].includes(currentOrder.status)) {
+        operationalStatus = 'PENDING_PAYMENT';
+      } else if (table.status === 'CLEANING') {
+        operationalStatus = 'CLOSED';
+      }
+
       return {
         ...table,
         currentOrder,
         currentDiners: currentOrder?.diners || table.currentDiners || 0,
         currentAccountSubtotal: itemsSubtotal,
+        currentAccountRemaining: remainingSubtotal,
+        elapsedMinutes,
+        operationalStatus,
+        nextReservation: table.reservations?.[0] || null,
       };
     });
   }
 
-  async createTable(branchId: string, data: { number: string; capacity: number; status?: string }) {
+  async getReservations(branchId: string, filters?: { status?: string; from?: string; to?: string }) {
+    const where: any = {
+      branchId,
+      deletedAt: null,
+    };
+
+    if (filters?.status) {
+      where.status = filters.status as ReservationStatus;
+    }
+
+    if (filters?.from || filters?.to) {
+      where.reservationAt = {};
+      if (filters?.from) where.reservationAt.gte = new Date(filters.from);
+      if (filters?.to) where.reservationAt.lte = new Date(filters.to);
+    }
+
+    return this.prisma.reservation.findMany({
+      where,
+      include: {
+        table: {
+          select: {
+            id: true,
+            number: true,
+            capacity: true,
+            status: true,
+            sector: true,
+          },
+        },
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { reservationAt: 'asc' },
+      take: 200,
+    });
+  }
+
+  async createReservation(
+    branchId: string,
+    createdById: string,
+    data: {
+      customerName: string;
+      customerPhone?: string;
+      partySize: number;
+      reservationAt: string;
+      tableId?: string;
+      notes?: string;
+      status?: ReservationStatus;
+    },
+  ) {
+    if (!data.customerName?.trim()) {
+      throw new BadRequestException('Debe indicar el nombre del cliente');
+    }
+
+    if (!Number.isInteger(data.partySize) || data.partySize < 1) {
+      throw new BadRequestException('Cantidad de personas invalida');
+    }
+
+    const reservationAt = new Date(data.reservationAt);
+    if (Number.isNaN(reservationAt.getTime())) {
+      throw new BadRequestException('Fecha/hora de reserva invalida');
+    }
+
+    if (data.tableId) {
+      const table = await this.ensureTable(data.tableId, branchId);
+      if (table.capacity < data.partySize) {
+        throw new BadRequestException('La mesa no soporta la cantidad de personas');
+      }
+
+      const activeOrder = await this.prisma.order.findFirst({
+        where: {
+          branchId,
+          tableId: table.id,
+          deletedAt: null,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        select: { id: true },
+      });
+
+      if (activeOrder) {
+        throw new BadRequestException('La mesa tiene una cuenta activa');
+      }
+    }
+
+    const status = (data.status || 'CONFIRMED') as ReservationStatus;
+
+    const reservation = await this.prisma.reservation.create({
+      data: {
+        branchId,
+        createdById,
+        customerName: data.customerName.trim(),
+        customerPhone: data.customerPhone?.trim() || null,
+        partySize: data.partySize,
+        reservationAt,
+        tableId: data.tableId || null,
+        notes: data.notes?.trim() || null,
+        status,
+      },
+      include: {
+        table: true,
+      },
+    });
+
+    if (reservation.tableId && ['PENDING', 'CONFIRMED'].includes(reservation.status)) {
+      await this.prisma.table.update({
+        where: { id: reservation.tableId },
+        data: { status: 'RESERVED' },
+      });
+    }
+
+    return reservation;
+  }
+
+  async updateReservation(
+    reservationId: string,
+    branchId: string,
+    data: {
+      customerName?: string;
+      customerPhone?: string;
+      partySize?: number;
+      reservationAt?: string;
+      tableId?: string | null;
+      notes?: string;
+      status?: ReservationStatus;
+    },
+  ) {
+    const reservation = await this.ensureReservation(reservationId, branchId);
+    const previousTableId = reservation.tableId;
+    const nextTableId = data.tableId === undefined ? reservation.tableId : data.tableId;
+
+    if (data.partySize !== undefined && (!Number.isInteger(data.partySize) || data.partySize < 1)) {
+      throw new BadRequestException('Cantidad de personas invalida');
+    }
+
+    if (nextTableId) {
+      const table = await this.ensureTable(nextTableId, branchId);
+      const partySize = data.partySize ?? reservation.partySize;
+      if (table.capacity < partySize) {
+        throw new BadRequestException('La mesa no soporta la cantidad de personas');
+      }
+
+      const activeOrder = await this.prisma.order.findFirst({
+        where: {
+          branchId,
+          tableId: table.id,
+          deletedAt: null,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        select: { id: true },
+      });
+
+      if (activeOrder) {
+        throw new BadRequestException('La mesa seleccionada tiene una cuenta activa');
+      }
+    }
+
+    const reservationAt = data.reservationAt ? new Date(data.reservationAt) : undefined;
+    if (reservationAt && Number.isNaN(reservationAt.getTime())) {
+      throw new BadRequestException('Fecha/hora de reserva invalida');
+    }
+
+    const updated = await this.prisma.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        ...(data.customerName !== undefined ? { customerName: data.customerName.trim() } : {}),
+        ...(data.customerPhone !== undefined ? { customerPhone: data.customerPhone.trim() || null } : {}),
+        ...(data.partySize !== undefined ? { partySize: data.partySize } : {}),
+        ...(reservationAt ? { reservationAt } : {}),
+        ...(data.tableId !== undefined ? { tableId: data.tableId || null } : {}),
+        ...(data.notes !== undefined ? { notes: data.notes.trim() || null } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+      },
+      include: { table: true },
+    });
+
+    if (previousTableId && previousTableId !== updated.tableId) {
+      await this.syncTableReservationStatus(previousTableId, branchId);
+    }
+
+    if (updated.tableId && ['PENDING', 'CONFIRMED'].includes(updated.status)) {
+      await this.prisma.table.update({
+        where: { id: updated.tableId },
+        data: { status: 'RESERVED' },
+      });
+    } else if (updated.tableId) {
+      await this.syncTableReservationStatus(updated.tableId, branchId);
+    }
+
+    return updated;
+  }
+
+  async updateReservationStatus(
+    reservationId: string,
+    branchId: string,
+    status: ReservationStatus,
+  ) {
+    const reservation = await this.ensureReservation(reservationId, branchId);
+    const nextStatus = status as ReservationStatus;
+
+    const updated = await this.prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { status: nextStatus },
+      include: { table: true },
+    });
+
+    if (updated.tableId && ['PENDING', 'CONFIRMED'].includes(nextStatus)) {
+      await this.prisma.table.update({
+        where: { id: updated.tableId },
+        data: { status: 'RESERVED' },
+      });
+    } else if (updated.tableId) {
+      await this.syncTableReservationStatus(updated.tableId, branchId);
+    }
+
+    return updated;
+  }
+
+  async seatReservation(
+    reservationId: string,
+    branchId: string,
+    fallbackWaiterId: string,
+    data?: { waiterId?: string; notes?: string },
+  ) {
+    const reservation = await this.ensureReservation(reservationId, branchId);
+
+    if (!['PENDING', 'CONFIRMED'].includes(reservation.status)) {
+      throw new BadRequestException('La reserva no esta disponible para sentar');
+    }
+
+    if (!reservation.tableId) {
+      throw new BadRequestException('La reserva no tiene mesa asignada');
+    }
+
+    const account = await this.openTable(
+      reservation.tableId,
+      branchId,
+      {
+        diners: reservation.partySize,
+        waiterId: data?.waiterId,
+        notes: data?.notes || reservation.notes || undefined,
+      },
+      fallbackWaiterId,
+    );
+
+    const updatedReservation = await this.prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { status: 'SEATED' },
+      include: { table: true },
+    });
+
+    return {
+      reservation: updatedReservation,
+      account,
+    };
+  }
+
+  async getKitchenQueue(branchId: string, minWaitMinutes = 0) {
+    const orders = await this.prisma.order.findMany({
+      where: {
+        branchId,
+        deletedAt: null,
+        status: { in: ACTIVE_ORDER_STATUSES },
+      },
+      include: {
+        table: {
+          select: {
+            id: true,
+            number: true,
+          },
+        },
+        waiter: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+        items: {
+          where: {
+            status: { in: ['PENDING', 'PREPARING', 'READY'] },
+          },
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const queue = orders
+      .map((order) => {
+        const now = Date.now();
+        const oldestItem = order.items[0];
+        const waitMinutes = oldestItem
+          ? Math.max(0, Math.floor((now - new Date(oldestItem.createdAt).getTime()) / (1000 * 60)))
+          : 0;
+
+        const alertLevel = waitMinutes >= 30 ? 'CRITICAL' : waitMinutes >= 20 ? 'WARNING' : 'NORMAL';
+
+        return {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          status: order.status,
+          diners: order.diners,
+          table: order.table,
+          waiter: order.waiter,
+          createdAt: order.createdAt,
+          waitMinutes,
+          alertLevel,
+          items: order.items.map((item) => ({
+            id: item.id,
+            productId: item.productId,
+            productName: item.product?.name || 'Producto',
+            quantity: item.quantity,
+            status: item.status,
+            notes: item.notes,
+            waitMinutes: Math.max(
+              0,
+              Math.floor((now - new Date(item.createdAt).getTime()) / (1000 * 60)),
+            ),
+          })),
+        };
+      })
+      .filter((order) => order.waitMinutes >= Math.max(0, Number(minWaitMinutes || 0)))
+      .sort((a, b) => b.waitMinutes - a.waitMinutes);
+
+    const summary = queue.reduce(
+      (acc, order) => {
+        for (const item of order.items) {
+          if (item.status === 'PENDING') acc.pending += 1;
+          if (item.status === 'PREPARING') acc.preparing += 1;
+          if (item.status === 'READY') acc.ready += 1;
+          if (item.waitMinutes >= 20) acc.overdue += 1;
+          acc.totalItems += 1;
+        }
+        return acc;
+      },
+      { pending: 0, preparing: 0, ready: 0, overdue: 0, totalItems: 0 },
+    );
+
+    return {
+      queue,
+      summary,
+    };
+  }
+
+  async getDashboard(branchId: string) {
+    const now = new Date();
+    const startOfDay = new Date(now);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const [tables, salesToday, ordersToday, activeOrders, reservationsToday] = await Promise.all([
+      this.getTables(branchId),
+      this.prisma.sale.findMany({
+        where: {
+          branchId,
+          status: 'COMPLETED',
+          tableId: { not: null },
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          branchId,
+          deletedAt: null,
+          status: 'SERVED',
+          closedAt: { gte: startOfDay, lte: endOfDay },
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          closedAt: true,
+        },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          branchId,
+          deletedAt: null,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        include: {
+          items: {
+            where: { status: { in: ['PENDING', 'PREPARING', 'READY'] } },
+            select: { status: true },
+          },
+        },
+      }),
+      this.prisma.reservation.findMany({
+        where: {
+          branchId,
+          deletedAt: null,
+          reservationAt: { gte: startOfDay, lte: endOfDay },
+          status: { in: ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'] },
+        },
+      }),
+    ]);
+
+    const ordersById = new Map<string, number>();
+    for (const sale of salesToday) {
+      if (sale.orderId) {
+        ordersById.set(sale.orderId, (ordersById.get(sale.orderId) || 0) + Number(sale.total));
+      }
+    }
+
+    const waiterSource = Array.from(ordersById.keys());
+    const waiterOrders = waiterSource.length
+      ? await this.prisma.order.findMany({
+          where: { id: { in: waiterSource } },
+          include: {
+            waiter: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        })
+      : [];
+
+    const waiterNameByOrder = new Map<string, string>();
+    for (const order of waiterOrders) {
+      waiterNameByOrder.set(
+        order.id,
+        order.waiter ? `${order.waiter.firstName} ${order.waiter.lastName}` : 'Sin garzon',
+      );
+    }
+
+    const salesByWaiterMap = new Map<string, number>();
+    for (const [orderId, total] of ordersById.entries()) {
+      const waiter = waiterNameByOrder.get(orderId) || 'Sin garzon';
+      salesByWaiterMap.set(waiter, (salesByWaiterMap.get(waiter) || 0) + total);
+    }
+
+    const productMap = new Map<string, { productId: string; name: string; quantity: number; total: number }>();
+    for (const sale of salesToday) {
+      for (const item of sale.items) {
+        const current = productMap.get(item.productId) || {
+          productId: item.productId,
+          name: item.product?.name || 'Producto',
+          quantity: 0,
+          total: 0,
+        };
+        current.quantity += Number(item.quantity);
+        current.total += Number(item.total);
+        productMap.set(item.productId, current);
+      }
+    }
+
+    const tableSummary = tables.reduce(
+      (acc, table: any) => {
+        if (table.operationalStatus === 'AVAILABLE') acc.available += 1;
+        else if (table.operationalStatus === 'RESERVED') acc.reserved += 1;
+        else if (table.operationalStatus === 'PENDING_PAYMENT') acc.pendingPayment += 1;
+        else if (table.operationalStatus === 'CLOSED') acc.closed += 1;
+        else acc.occupied += 1;
+        return acc;
+      },
+      { available: 0, occupied: 0, reserved: 0, pendingPayment: 0, closed: 0 },
+    );
+
+    const kitchen = activeOrders.reduce(
+      (acc, order) => {
+        for (const item of order.items) {
+          if (item.status === 'PENDING') acc.pending += 1;
+          if (item.status === 'PREPARING') acc.preparing += 1;
+          if (item.status === 'READY') acc.ready += 1;
+        }
+        return acc;
+      },
+      { pending: 0, preparing: 0, ready: 0 },
+    );
+
+    const totalSales = salesToday.reduce((sum, sale) => sum + Number(sale.total), 0);
+    const averageTicket = salesToday.length > 0 ? totalSales / salesToday.length : 0;
+    const avgTableMinutes = ordersToday.length > 0
+      ? ordersToday.reduce((sum, order) => {
+          const endTime = order.closedAt ? new Date(order.closedAt).getTime() : Date.now();
+          return sum + Math.max(0, Math.floor((endTime - new Date(order.createdAt).getTime()) / (1000 * 60)));
+        }, 0) / ordersToday.length
+      : 0;
+
+    return {
+      tables: tableSummary,
+      sales: {
+        count: salesToday.length,
+        amount: totalSales,
+        averageTicket,
+      },
+      orders: {
+        open: activeOrders.length,
+        avgTableMinutes,
+      },
+      reservations: {
+        totalToday: reservationsToday.length,
+        pending: reservationsToday.filter((r) => ['PENDING', 'CONFIRMED'].includes(r.status)).length,
+        seated: reservationsToday.filter((r) => r.status === 'SEATED').length,
+      },
+      kitchen,
+      salesByWaiter: Array.from(salesByWaiterMap.entries())
+        .map(([waiter, amount]) => ({ waiter, amount }))
+        .sort((a, b) => b.amount - a.amount),
+      topProducts: Array.from(productMap.values())
+        .sort((a, b) => b.quantity - a.quantity)
+        .slice(0, 8),
+    };
+  }
+
+  async createTable(branchId: string, data: { number: string; capacity: number; status?: string; sector?: string }) {
     const exists = await this.prisma.table.findFirst({
       where: {
         branchId,
@@ -151,7 +782,7 @@ export class RestaurantService {
     });
 
     if (exists) {
-      throw new BadRequestException('Ya existe una mesa con ese número');
+      throw new BadRequestException('Ya existe una mesa con ese nÃºmero');
     }
 
     return this.prisma.table.create({
@@ -160,6 +791,7 @@ export class RestaurantService {
         number: data.number,
         capacity: data.capacity,
         status: (data.status as any) || 'AVAILABLE',
+        sector: data.sector || null,
       },
     });
   }
@@ -167,7 +799,7 @@ export class RestaurantService {
   async updateTable(
     tableId: string,
     branchId: string,
-    data: { number?: string; capacity?: number; status?: string }
+    data: { number?: string; capacity?: number; status?: string; sector?: string | null }
   ) {
     const table = await this.ensureTable(tableId, branchId);
 
@@ -181,7 +813,7 @@ export class RestaurantService {
         },
       });
       if (exists) {
-        throw new BadRequestException('Ya existe otra mesa con ese número');
+        throw new BadRequestException('Ya existe otra mesa con ese nÃºmero');
       }
     }
 
@@ -191,6 +823,7 @@ export class RestaurantService {
         ...(data.number !== undefined ? { number: data.number } : {}),
         ...(data.capacity !== undefined ? { capacity: data.capacity } : {}),
         ...(data.status !== undefined ? { status: data.status as any } : {}),
+        ...(data.sector !== undefined ? { sector: data.sector || null } : {}),
       },
     });
   }
@@ -209,6 +842,20 @@ export class RestaurantService {
 
     if (activeOrder) {
       throw new BadRequestException('No se puede eliminar una mesa con pedido activo');
+    }
+
+    const upcomingReservation = await this.prisma.reservation.findFirst({
+      where: {
+        tableId: table.id,
+        branchId,
+        deletedAt: null,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+      },
+      select: { id: true },
+    });
+
+    if (upcomingReservation) {
+      throw new BadRequestException('No se puede eliminar una mesa con reservas activas');
     }
 
     return this.prisma.table.update({
@@ -249,7 +896,7 @@ export class RestaurantService {
     }
 
     if (!['AVAILABLE', 'RESERVED'].includes(table.status)) {
-      throw new BadRequestException('La mesa no está disponible para apertura');
+      throw new BadRequestException('La mesa no estÃ¡ disponible para apertura');
     }
 
     const waiterId = data.waiterId || fallbackWaiterId;
@@ -263,7 +910,7 @@ export class RestaurantService {
     });
 
     if (!waiter) {
-      throw new BadRequestException('Garzón no válido para esta sucursal');
+      throw new BadRequestException('GarzÃ³n no vÃ¡lido para esta sucursal');
     }
 
     const lastOrder = await this.prisma.order.findFirst({
@@ -299,6 +946,19 @@ export class RestaurantService {
     await this.prisma.table.update({
       where: { id: table.id },
       data: { currentOrderId: order.id },
+    });
+
+    await this.prisma.reservation.updateMany({
+      where: {
+        branchId,
+        tableId: table.id,
+        deletedAt: null,
+        status: { in: ['PENDING', 'CONFIRMED'] },
+        reservationAt: {
+          lte: new Date(Date.now() + 4 * 60 * 60 * 1000),
+        },
+      },
+      data: { status: 'SEATED' },
     });
 
     return this.getOrderAccount(order.id, branchId);
@@ -366,7 +1026,7 @@ export class RestaurantService {
     await this.prisma.$transaction(async (tx) => {
       for (const item of payload.items) {
         if (!item.productId || item.quantity < 1) {
-          throw new BadRequestException('Item de pedido inválido');
+          throw new BadRequestException('Item de pedido invÃ¡lido');
         }
 
         const product = await tx.product.findFirst({
@@ -379,7 +1039,7 @@ export class RestaurantService {
         });
 
         if (!product) {
-          throw new BadRequestException(`Producto inválido: ${item.productId}`);
+          throw new BadRequestException(`Producto invÃ¡lido: ${item.productId}`);
         }
 
         await tx.orderItem.create({
@@ -487,7 +1147,7 @@ export class RestaurantService {
     });
 
     if (!waiter) {
-      throw new BadRequestException('Garzón no válido para esta sucursal');
+      throw new BadRequestException('GarzÃ³n no vÃ¡lido para esta sucursal');
     }
 
     await this.prisma.order.update({
@@ -521,7 +1181,7 @@ export class RestaurantService {
 
   async splitPreview(orderId: string, branchId: string, parts: number) {
     if (!Number.isInteger(parts) || parts < 2) {
-      throw new BadRequestException('La división debe ser en 2 o más partes');
+      throw new BadRequestException('La divisiÃ³n debe ser en 2 o mÃ¡s partes');
     }
 
     const account = await this.getOrderAccount(orderId, branchId);
@@ -573,7 +1233,7 @@ export class RestaurantService {
 
     const order = await this.ensureOrder(orderId, branchId);
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
-      throw new BadRequestException('El pedido no está activo para cobro');
+      throw new BadRequestException('El pedido no estÃ¡ activo para cobro');
     }
 
     const remainingItems = order.items
@@ -610,7 +1270,7 @@ export class RestaurantService {
       }
 
       if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > source.remainingQuantity) {
-        throw new BadRequestException(`Cantidad inválida para ${source.product.name}`);
+        throw new BadRequestException(`Cantidad invÃ¡lida para ${source.product.name}`);
       }
 
       return {
@@ -694,7 +1354,7 @@ export class RestaurantService {
     const account = await this.getOrderAccount(order.id, branchId);
 
     if (Number(account.totals.remainingTotal) > 0) {
-      throw new BadRequestException('No se puede cerrar la cuenta, aún hay saldo pendiente');
+      throw new BadRequestException('No se puede cerrar la cuenta, aÃºn hay saldo pendiente');
     }
 
     await this.prisma.$transaction([
@@ -734,7 +1394,7 @@ export class RestaurantService {
       throw new BadRequestException('No se puede liberar una mesa con cuenta activa');
     }
 
-    return this.prisma.table.update({
+    await this.prisma.table.update({
       where: { id: table.id },
       data: {
         status: 'AVAILABLE',
@@ -742,6 +1402,12 @@ export class RestaurantService {
         currentDiners: 0,
         openedAt: null,
       },
+    });
+
+    await this.syncTableReservationStatus(table.id, branchId);
+
+    return this.prisma.table.findUnique({
+      where: { id: table.id },
     });
   }
 
@@ -867,3 +1533,5 @@ export class RestaurantService {
     };
   }
 }
+
+

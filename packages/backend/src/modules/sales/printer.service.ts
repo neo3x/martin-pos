@@ -31,7 +31,7 @@ export class PrinterService {
       this.printer.alignCenter();
       this.printer.setTextSize(1, 1);
       this.printer.bold(true);
-      this.printer.println(sale.branch?.name || 'Martin POS');
+      this.printer.println(sale.branch?.name || 'OmniPunto');
       this.printer.bold(false);
       this.printer.setTextNormal();
       this.printer.println(sale.branch?.address || '');
@@ -90,9 +90,10 @@ export class PrinterService {
       // Footer
       this.printer.newLine();
       this.printer.alignCenter();
-      this.printer.println('¡Gracias por su compra!');
+      this.printer.println('Gracias por su compra!');
       this.printer.newLine();
-      this.printer.println('Sistema Martin POS');
+      this.printer.println('OmniPunto');
+      this.printer.println('La plataforma que se adapta a tu negocio.');
       this.printer.newLine();
       this.printer.newLine();
       this.printer.newLine();
@@ -102,9 +103,9 @@ export class PrinterService {
 
       // Execute print
       await this.printer.execute();
-      console.log('✅ Receipt printed successfully');
+      console.log('Receipt printed successfully');
     } catch (error) {
-      console.error('❌ Print error:', error);
+      console.error('Print error:', error);
       throw error;
     }
   }
@@ -134,8 +135,8 @@ export class PrinterService {
       CASH: 'Efectivo',
       CARD: 'Tarjeta',
       TRANSFER: 'Transferencia',
-      QR: 'Código QR',
-      CREDIT: 'Crédito',
+      QR: 'Codigo QR',
+      CREDIT: 'Credito',
       MIXED: 'Mixto',
     };
     return labels[method] || method;
@@ -155,7 +156,7 @@ export class PrinterService {
 
       if (product.barcode) {
         // Print barcode (implementation depends on printer capabilities)
-        this.printer.println(`Código: ${product.barcode}`);
+        this.printer.println(`Codigo: ${product.barcode}`);
       }
 
       this.printer.newLine();
@@ -173,10 +174,11 @@ export class PrinterService {
       this.printer.cut();
       await this.printer.execute();
 
-      console.log('✅ Label printed successfully');
+      console.log('Label printed successfully');
     } catch (error) {
-      console.error('❌ Print error:', error);
+      console.error('Print error:', error);
       throw error;
     }
   }
 }
+

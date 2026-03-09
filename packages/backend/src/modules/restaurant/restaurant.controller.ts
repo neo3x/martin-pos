@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -19,14 +19,87 @@ export class RestaurantController {
   constructor(private restaurantService: RestaurantService) {}
 
   @Get('tables')
-  getTables(@Request() req) {
-    return this.restaurantService.getTables(req.user.branchId);
+  getTables(@Request() req, @Query('sector') sector?: string) {
+    return this.restaurantService.getTables(req.user.branchId, { sector });
+  }
+
+  @Get('dashboard')
+  getDashboard(@Request() req) {
+    return this.restaurantService.getDashboard(req.user.branchId);
+  }
+
+  @Get('kds')
+  getKitchenQueue(@Request() req, @Query('minWait') minWait?: string) {
+    return this.restaurantService.getKitchenQueue(req.user.branchId, minWait ? Number(minWait) : 0);
+  }
+
+  @Get('reservations')
+  getReservations(
+    @Request() req,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.restaurantService.getReservations(req.user.branchId, { status, from, to });
+  }
+
+  @Post('reservations')
+  createReservation(
+    @Request() req,
+    @Body()
+    data: {
+      customerName: string;
+      customerPhone?: string;
+      partySize: number;
+      reservationAt: string;
+      tableId?: string;
+      notes?: string;
+      status?: 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+    },
+  ) {
+    return this.restaurantService.createReservation(req.user.branchId, req.user.id, data as any);
+  }
+
+  @Put('reservations/:id')
+  updateReservation(
+    @Request() req,
+    @Param('id') reservationId: string,
+    @Body()
+    data: {
+      customerName?: string;
+      customerPhone?: string;
+      partySize?: number;
+      reservationAt?: string;
+      tableId?: string | null;
+      notes?: string;
+      status?: 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+    },
+  ) {
+    return this.restaurantService.updateReservation(reservationId, req.user.branchId, data as any);
+  }
+
+  @Put('reservations/:id/status')
+  updateReservationStatus(
+    @Request() req,
+    @Param('id') reservationId: string,
+    @Body() data: { status: 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' },
+  ) {
+    return this.restaurantService.updateReservationStatus(reservationId, req.user.branchId, data.status as any);
+  }
+
+  @Post('reservations/:id/seat')
+  seatReservation(
+    @Request() req,
+    @Param('id') reservationId: string,
+    @Body() data?: { waiterId?: string; notes?: string },
+  ) {
+    return this.restaurantService.seatReservation(reservationId, req.user.branchId, req.user.id, data);
   }
 
   @Post('tables')
   createTable(
     @Request() req,
-    @Body() data: { number: string; capacity: number; status?: string },
+    @Body() data: { number: string; capacity: number; status?: string; sector?: string },
   ) {
     return this.restaurantService.createTable(req.user.branchId, data);
   }
@@ -35,7 +108,7 @@ export class RestaurantController {
   updateTable(
     @Request() req,
     @Param('id') tableId: string,
-    @Body() data: { number?: string; capacity?: number; status?: string },
+    @Body() data: { number?: string; capacity?: number; status?: string; sector?: string | null },
   ) {
     return this.restaurantService.updateTable(tableId, req.user.branchId, data);
   }
@@ -156,3 +229,5 @@ export class RestaurantController {
     return this.restaurantService.updateOrderStatus(orderId, req.user.branchId, data.status);
   }
 }
+
+

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { LogOut, User2 } from 'lucide-react';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 import { MODULE_NAME_MAP } from '@/lib/modules';
+import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
 
 export function Header() {
   const router = useRouter();
@@ -21,13 +22,14 @@ export function Header() {
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="flex h-16 items-center justify-between px-4 lg:px-6">
         <div className="flex items-center gap-3">
+          <OmniPuntoLogo iconClassName="h-8 w-8" className="hidden lg:inline-flex" textClassName="hidden" />
           <span className="rounded-lg bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white">
             {user?.isDemo ? 'Demo' : 'Produccion'}
           </span>
           <div>
             <p className="text-sm font-semibold text-slate-900">Bienvenido, {user?.firstName || 'Usuario'}</p>
             <p className="text-xs text-slate-500">
-              {(user?.branchName || 'Sucursal principal')} · Perfil {user?.role || 'ADMIN'}
+              {(user?.branchName || 'Sucursal principal')} - Perfil {user?.role || 'ADMIN'}
             </p>
           </div>
         </div>
@@ -66,3 +68,4 @@ export function Header() {
     </header>
   );
 }
+

@@ -25,7 +25,7 @@ type Blueprint = {
 const blueprints: Record<Exclude<ModuleType, 'ALL'>, Blueprint> = {
   RESTAURANT: {
     branchName: 'Demo Restaurante',
-    branchEmail: 'demo.restaurant@martinpos.local',
+    branchEmail: 'demo.restaurant@omnipunto.local',
     categories: [
       { name: 'Entradas', description: 'Aperitivos y entradas' },
       { name: 'Fondos', description: 'Platos principales' },
@@ -90,7 +90,7 @@ const blueprints: Record<Exclude<ModuleType, 'ALL'>, Blueprint> = {
   },
   MINIMARKET: {
     branchName: 'Demo Minimarket',
-    branchEmail: 'demo.minimarket@martinpos.local',
+    branchEmail: 'demo.minimarket@omnipunto.local',
     categories: [
       { name: 'Abarrotes', description: 'Despensa diaria' },
       { name: 'Bebidas', description: 'Bebidas y jugos' },
@@ -156,7 +156,7 @@ const blueprints: Record<Exclude<ModuleType, 'ALL'>, Blueprint> = {
   },
   BOTILLERIA: {
     branchName: 'Demo Botilleria',
-    branchEmail: 'demo.botilleria@martinpos.local',
+    branchEmail: 'demo.botilleria@omnipunto.local',
     categories: [
       { name: 'Vinos', description: 'Tintos y blancos' },
       { name: 'Cervezas', description: 'Lager y artesanales' },
@@ -212,7 +212,7 @@ const blueprints: Record<Exclude<ModuleType, 'ALL'>, Blueprint> = {
   },
   BOOKSTORE: {
     branchName: 'Demo Libreria Bazar',
-    branchEmail: 'demo.bookstore@martinpos.local',
+    branchEmail: 'demo.bookstore@omnipunto.local',
     categories: [
       { name: 'Libros', description: 'Lectura y estudio' },
       { name: 'Cuadernos', description: 'Escolares y universitarios' },
@@ -273,6 +273,11 @@ function getModulePrefix(moduleType: ModuleType) {
 }
 
 function getDefaultAdminEmail(moduleType: ModuleType) {
+  if (moduleType === ModuleType.MINIMARKET) return 'admin@omnipunto.com';
+  return `admin.${moduleType.toLowerCase()}@omnipunto.com`;
+}
+
+function getLegacyAdminEmail(moduleType: ModuleType) {
   if (moduleType === ModuleType.MINIMARKET) return 'admin@martinpos.com';
   return `admin.${moduleType.toLowerCase()}@martinpos.com`;
 }
@@ -280,7 +285,15 @@ function getDefaultAdminEmail(moduleType: ModuleType) {
 async function ensureBranch(moduleType: Exclude<ModuleType, 'ALL'>) {
   const blueprint = blueprints[moduleType];
   const existing = await prisma.branch.findFirst({
-    where: { email: blueprint.branchEmail, deletedAt: null },
+    where: {
+      OR: [
+        { email: blueprint.branchEmail, deletedAt: null },
+        {
+          email: blueprint.branchEmail.replace('@omnipunto.local', '@martinpos.local'),
+          deletedAt: null,
+        },
+      ],
+    },
   });
 
   if (existing) {
@@ -288,6 +301,7 @@ async function ensureBranch(moduleType: Exclude<ModuleType, 'ALL'>) {
       where: { id: existing.id },
       data: {
         name: blueprint.branchName,
+        email: blueprint.branchEmail,
         moduleType,
         config: {
           currency: 'CLP',
@@ -320,12 +334,20 @@ async function ensureBranch(moduleType: Exclude<ModuleType, 'ALL'>) {
 
 async function ensureAdmin(branchId: string, moduleType: ModuleType, passwordHash: string) {
   const email = getDefaultAdminEmail(moduleType);
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email },
+        { email: getLegacyAdminEmail(moduleType) },
+      ],
+    },
+  });
 
   if (existing) {
     return prisma.user.update({
-      where: { email },
+      where: { id: existing.id },
       data: {
+        email,
         password: passwordHash,
         firstName: 'Admin',
         lastName: moduleType === ModuleType.MINIMARKET ? 'Principal' : moduleType,
@@ -352,9 +374,9 @@ async function ensureAdmin(branchId: string, moduleType: ModuleType, passwordHas
 async function ensureOperationalUsers(branchId: string, moduleType: ModuleType, passwordHash: string) {
   const rolesByModule: Record<Exclude<ModuleType, 'ALL'>, UserRole[]> = {
     RESTAURANT: [UserRole.MANAGER, UserRole.CASHIER, UserRole.WAITER, UserRole.KITCHEN, UserRole.VIEWER],
-    MINIMARKET: [UserRole.MANAGER, UserRole.CASHIER, UserRole.VIEWER],
-    BOTILLERIA: [UserRole.MANAGER, UserRole.CASHIER, UserRole.VIEWER],
-    BOOKSTORE: [UserRole.MANAGER, UserRole.CASHIER, UserRole.VIEWER],
+    MINIMARKET: [UserRole.MANAGER, UserRole.CASHIER, UserRole.STOCKER, UserRole.VIEWER],
+    BOTILLERIA: [UserRole.MANAGER, UserRole.CASHIER, UserRole.SELLER, UserRole.VIEWER],
+    BOOKSTORE: [UserRole.MANAGER, UserRole.CASHIER, UserRole.SELLER, UserRole.VIEWER],
   };
 
   const roleLabels: Record<UserRole, string> = {
@@ -362,6 +384,8 @@ async function ensureOperationalUsers(branchId: string, moduleType: ModuleType, 
     ADMIN: 'Admin',
     MANAGER: 'Encargado',
     CASHIER: 'Cajero',
+    SELLER: 'Vendedor',
+    STOCKER: 'Reponedor',
     WAITER: 'Garzon',
     KITCHEN: 'Cocina',
     VIEWER: 'Consulta',
@@ -371,9 +395,15 @@ async function ensureOperationalUsers(branchId: string, moduleType: ModuleType, 
   const roleSet = rolesByModule[safeModule] || [];
 
   for (const role of roleSet) {
-    const email = `${role.toLowerCase()}.${safeModule.toLowerCase()}@demo.martinpos.local`;
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const email = `${role.toLowerCase()}.${safeModule.toLowerCase()}@demo.omnipunto.local`;
+    const legacyEmail = `${role.toLowerCase()}.${safeModule.toLowerCase()}@demo.martinpos.local`;
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [{ email }, { email: legacyEmail }],
+      },
+    });
     const payload = {
+      email,
       password: passwordHash,
       firstName: roleLabels[role],
       lastName: `Demo ${safeModule}`,
@@ -384,7 +414,7 @@ async function ensureOperationalUsers(branchId: string, moduleType: ModuleType, 
 
     if (existing) {
       await prisma.user.update({
-        where: { email },
+        where: { id: existing.id },
         data: payload,
       });
     } else {
@@ -398,10 +428,197 @@ async function ensureOperationalUsers(branchId: string, moduleType: ModuleType, 
   }
 }
 
+async function seedModulePromotionsAndRules(
+  branchId: string,
+  moduleType: Exclude<ModuleType, 'ALL'>,
+  products: Array<{ id: string; sku: string; name: string; categoryName: string }>
+) {
+  const now = new Date();
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - 3);
+  const endDate = new Date(now);
+  endDate.setDate(endDate.getDate() + 45);
+
+  const createOrUpdatePromotion = async (payload: {
+    name: string;
+    description: string;
+    type: 'DISCOUNT' | 'COMBO' | 'SEASONAL';
+    discountType: 'PERCENTAGE' | 'FIXED_AMOUNT';
+    discountValue: number;
+    conditions?: Record<string, any>;
+    comboProductSkus?: Array<{ sku: string; quantity?: number }>;
+  }) => {
+    const existing = await prisma.promotion.findFirst({
+      where: {
+        branchId,
+        name: payload.name,
+      },
+    });
+
+    const promotion = existing
+      ? await prisma.promotion.update({
+          where: { id: existing.id },
+          data: {
+            description: payload.description,
+            type: payload.type as any,
+            discountType: payload.discountType as any,
+            discountValue: payload.discountValue,
+            startDate,
+            endDate,
+            isActive: true,
+            conditions: payload.conditions || {},
+          },
+        })
+      : await prisma.promotion.create({
+          data: {
+            branchId,
+            name: payload.name,
+            description: payload.description,
+            type: payload.type as any,
+            discountType: payload.discountType as any,
+            discountValue: payload.discountValue,
+            startDate,
+            endDate,
+            isActive: true,
+            conditions: payload.conditions || {},
+          },
+        });
+
+    if (payload.comboProductSkus?.length) {
+      await prisma.comboProduct.deleteMany({
+        where: { promotionId: promotion.id },
+      });
+
+      const comboProducts = payload.comboProductSkus
+        .map((combo) => {
+          const product = products.find((p) => p.sku === combo.sku);
+          if (!product) return null;
+          return {
+            promotionId: promotion.id,
+            productId: product.id,
+            quantity: combo.quantity || 1,
+          };
+        })
+        .filter(Boolean) as Array<{ promotionId: string; productId: string; quantity: number }>;
+
+      if (comboProducts.length) {
+        await prisma.comboProduct.createMany({
+          data: comboProducts,
+        });
+      }
+    }
+  };
+
+  if (moduleType === ModuleType.MINIMARKET) {
+    await createOrUpdatePromotion({
+      name: 'Combo Colacion Express',
+      description: 'Combo de alta rotacion para caja rapida',
+      type: 'COMBO',
+      discountType: 'FIXED_AMOUNT',
+      discountValue: 650,
+      conditions: { minSubtotal: 2500, channel: 'quick-sale' },
+      comboProductSkus: [
+        { sku: 'MIN-BEB-001', quantity: 1 },
+        { sku: 'MIN-SNK-001', quantity: 1 },
+      ],
+    });
+
+    await createOrUpdatePromotion({
+      name: 'Reposicion Nocturna Snacks',
+      description: 'Promocion por categoria snacks',
+      type: 'DISCOUNT',
+      discountType: 'PERCENTAGE',
+      discountValue: 8,
+      conditions: { categories: ['Snacks'], minSubtotal: 2000 },
+    });
+    return;
+  }
+
+  if (moduleType === ModuleType.BOTILLERIA) {
+    await createOrUpdatePromotion({
+      name: 'Pack Piscola Fin de Semana',
+      description: 'Pisco + tonica/mixers con descuento',
+      type: 'COMBO',
+      discountType: 'FIXED_AMOUNT',
+      discountValue: 1200,
+      conditions: { minSubtotal: 6000, requiresAgeCheck: true },
+      comboProductSkus: [
+        { sku: 'BOT-DES-001', quantity: 1 },
+        { sku: 'BOT-MIX-001', quantity: 2 },
+      ],
+    });
+
+    await createOrUpdatePromotion({
+      name: 'Promo Cervezas por Volumen',
+      description: 'Descuento por volumen en cervezas',
+      type: 'DISCOUNT',
+      discountType: 'PERCENTAGE',
+      discountValue: 10,
+      conditions: { minSubtotal: 5000, categories: ['Cervezas'] },
+    });
+
+    for (let dayOfWeek = 0; dayOfWeek <= 6; dayOfWeek += 1) {
+      await prisma.saleHoursRestriction.upsert({
+        where: {
+          branchId_dayOfWeek: {
+            branchId,
+            dayOfWeek,
+          },
+        },
+        create: {
+          branchId,
+          dayOfWeek,
+          openTime: dayOfWeek === 5 || dayOfWeek === 6 ? '10:00' : '11:00',
+          closeTime: dayOfWeek === 5 || dayOfWeek === 6 ? '23:45' : '22:30',
+          isEnabled: true,
+        },
+        update: {
+          openTime: dayOfWeek === 5 || dayOfWeek === 6 ? '10:00' : '11:00',
+          closeTime: dayOfWeek === 5 || dayOfWeek === 6 ? '23:45' : '22:30',
+          isEnabled: true,
+        },
+      });
+    }
+    return;
+  }
+
+  if (moduleType === ModuleType.BOOKSTORE) {
+    await createOrUpdatePromotion({
+      name: 'Campana Escolar Marzo',
+      description: 'Descuento por temporada escolar',
+      type: 'SEASONAL',
+      discountType: 'PERCENTAGE',
+      discountValue: 12,
+      conditions: { season: 'Escolar', minSubtotal: 10000 },
+    });
+
+    await createOrUpdatePromotion({
+      name: 'Combo Oficina Base',
+      description: 'Pack para oficina y estudio',
+      type: 'COMBO',
+      discountType: 'FIXED_AMOUNT',
+      discountValue: 900,
+      conditions: { minSubtotal: 7000, campaign: 'Oficina' },
+      comboProductSkus: [
+        { sku: 'LIB-OFI-001', quantity: 1 },
+        { sku: 'LIB-ESC-001', quantity: 1 },
+      ],
+    });
+  }
+}
+
 async function seedModuleData(branchId: string, userId: string, moduleType: Exclude<ModuleType, 'ALL'>) {
   const blueprint = blueprints[moduleType];
   const categoryIds = new Map<string, string>();
-  const products: { id: string; price: number; stock: number; minStock: number; categoryName: string }[] = [];
+  const products: {
+    id: string;
+    sku: string;
+    name: string;
+    price: number;
+    stock: number;
+    minStock: number;
+    categoryName: string;
+  }[] = [];
 
   for (const category of blueprint.categories) {
     const existing = await prisma.category.findFirst({
@@ -452,6 +669,8 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
 
     products.push({
       id: saved.id,
+      sku: saved.sku,
+      name: saved.name,
       price: Number(saved.price),
       stock: Number(saved.stock),
       minStock: Number(saved.minStock),
@@ -590,6 +809,8 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
     }
   }
 
+  await seedModulePromotionsAndRules(branchId, moduleType, products);
+
   if (moduleType === ModuleType.BOTILLERIA) {
     for (const product of products) {
       const existingAlcohol = await prisma.alcoholicProduct.findUnique({
@@ -637,11 +858,13 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
 
   if (moduleType === ModuleType.RESTAURANT && blueprint.tables?.length) {
     const tableIds: string[] = [];
+    const sectors = ['Salon Principal', 'Terraza', 'Barra'];
     for (const table of blueprint.tables) {
       const existing = await prisma.table.findFirst({
         where: { branchId, number: table.number, deletedAt: null },
       });
       const currentDiners = table.status === 'OCCUPIED' ? Math.min(table.capacity, 2 + (Number(table.number) % 3)) : 0;
+      const sector = sectors[(Number(table.number) - 1) % sectors.length];
       const saved = existing
         ? await prisma.table.update({
             where: { id: existing.id },
@@ -650,6 +873,7 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
               status: table.status,
               currentDiners,
               openedAt: table.status === 'OCCUPIED' ? new Date() : null,
+              sector,
             },
           })
         : await prisma.table.create({
@@ -660,6 +884,7 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
               status: table.status,
               currentDiners,
               openedAt: table.status === 'OCCUPIED' ? new Date() : null,
+              sector,
             },
           });
       tableIds.push(saved.id);
@@ -701,6 +926,50 @@ async function seedModuleData(branchId: string, userId: string, moduleType: Excl
         },
       });
     }
+
+    const reservationBlueprint = [
+      { customerName: 'Reserva Familia Soto', partySize: 4, tableIndex: 1, hour: 13, status: 'CONFIRMED' as const },
+      { customerName: 'Reserva Oficina Norte', partySize: 6, tableIndex: 2, hour: 15, status: 'PENDING' as const },
+      { customerName: 'Reserva Cumpleanos Diaz', partySize: 5, tableIndex: 4, hour: 20, status: 'CONFIRMED' as const },
+    ];
+
+    for (const [index, blueprint] of reservationBlueprint.entries()) {
+      const reservationAt = new Date();
+      reservationAt.setHours(blueprint.hour, index === 0 ? 0 : 30, 0, 0);
+      const tableId = tableIds[blueprint.tableIndex % tableIds.length];
+
+      const existingReservation = await prisma.reservation.findFirst({
+        where: {
+          branchId,
+          customerName: blueprint.customerName,
+          reservationAt,
+          deletedAt: null,
+        },
+      });
+
+      if (!existingReservation) {
+        await prisma.reservation.create({
+          data: {
+            branchId,
+            createdById: userId,
+            customerName: blueprint.customerName,
+            customerPhone: '+56990000000',
+            partySize: blueprint.partySize,
+            reservationAt,
+            tableId,
+            status: blueprint.status,
+            notes: 'Reserva demo restaurante',
+          },
+        });
+      }
+
+      if (['PENDING', 'CONFIRMED'].includes(blueprint.status)) {
+        await prisma.table.update({
+          where: { id: tableId },
+          data: { status: 'RESERVED' },
+        });
+      }
+    }
   }
 }
 
@@ -721,7 +990,7 @@ async function main() {
   }
 
   console.log('Seed completed successfully');
-  console.log('Main admin: admin@martinpos.com / admin123');
+  console.log('Main admin: admin@omnipunto.com / admin123');
 }
 
 main()
@@ -732,3 +1001,5 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+
+

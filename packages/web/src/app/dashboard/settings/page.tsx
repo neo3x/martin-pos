@@ -21,10 +21,10 @@ type ConfigState = {
   printerWidth: string;
 };
 
-const STORAGE_KEY = 'martinpos.local.settings';
+const STORAGE_KEY = 'omnipunto.local.settings';
 
 const DEFAULT_CONFIG: ConfigState = {
-  businessName: 'Martin POS',
+  businessName: 'OmniPunto',
   currency: 'CLP',
   timezone: 'America/Santiago',
   taxRate: '19',
@@ -234,7 +234,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <h2 className="text-xl font-bold text-slate-900">Sistema</h2>
               <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                <p><strong>Version:</strong> Martin POS v1.0.0</p>
+                <p><strong>Version:</strong> OmniPunto v1.0.0</p>
                 <p><strong>API:</strong> {process.env.NEXT_PUBLIC_API_URL || '/api/v1'}</p>
                 <p><strong>Base de datos:</strong> PostgreSQL + Prisma</p>
               </div>

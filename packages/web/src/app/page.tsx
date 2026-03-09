@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { MODULES } from '@/lib/modules';
+import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
 
 const platformFeatures = [
   'Ventas, caja e historial en tiempo real',
@@ -74,9 +75,7 @@ export default function HomePage() {
       <div className="bg-[radial-gradient(circle_at_top,_#dbeafe_0%,_#f5f7fb_55%,_#f5f7fb_100%)]">
         <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-slate-900 px-2 py-1 text-xs font-semibold uppercase tracking-widest text-white">
-              Martin POS
-            </div>
+            <OmniPuntoLogo showSlogan />
             <span className="text-sm font-medium text-slate-600">SaaS Multi-Modulo</span>
           </div>
           <div className="flex items-center gap-3">
@@ -99,7 +98,7 @@ export default function HomePage() {
               Opera tu negocio con un POS modular, elegante y realmente comercial.
             </h1>
             <p className="max-w-2xl text-lg text-slate-600">
-              Desde la landing hasta la operacion diaria, Martin POS conecta ventas, inventario, clientes y analitica con experiencias especializadas para cada rubro.
+              OmniPunto conecta ventas, inventario, clientes y analitica con experiencias operativas especializadas para cada rubro.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link href="/demo" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500">
@@ -258,9 +257,9 @@ export default function HomePage() {
 
       <section className="mx-auto w-full max-w-7xl px-6 pb-16 pt-4 lg:px-10">
         <div className="rounded-3xl bg-slate-900 p-8 text-white lg:p-10">
-          <h2 className="text-3xl font-black lg:text-4xl">Listo para probar Martin POS?</h2>
+          <h2 className="text-3xl font-black lg:text-4xl">Listo para probar OmniPunto?</h2>
           <p className="mt-3 max-w-2xl text-slate-300">
-            Evalua el flujo completo por modulo, desde landing comercial hasta operacion diaria.
+            La plataforma que se adapta a tu negocio.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link href="/demo" className="rounded-xl bg-indigo-500 px-5 py-3 text-sm font-semibold hover:bg-indigo-400">
@@ -279,7 +278,7 @@ export default function HomePage() {
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto grid w-full max-w-7xl gap-8 px-6 py-10 text-sm lg:grid-cols-5 lg:px-10">
           <div className="lg:col-span-2">
-            <p className="text-lg font-bold">Martin POS</p>
+            <p className="text-lg font-bold">OmniPunto</p>
             <p className="mt-2 text-slate-600">Plataforma POS modular para negocios que quieren operar y vender mejor.</p>
           </div>
           <div>
@@ -301,7 +300,7 @@ export default function HomePage() {
           <div>
             <p className="mb-2 font-semibold">Contacto</p>
             <ul className="space-y-1 text-slate-600">
-              <li>ventas@martinpos.com</li>
+              <li>ventas@omnipunto.cl</li>
               <li>+56 9 5555 5555</li>
               <li>Santiago, Chile</li>
             </ul>

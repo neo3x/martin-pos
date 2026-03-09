@@ -31,11 +31,12 @@ export class HealthController {
   @Get('/')
   root() {
     return {
-      name: 'Martin POS API',
+      name: 'OmniPunto API',
       version: '1.0.0',
-      description: 'Sistema POS multi-módulo asistido por IA',
+      description: 'Sistema POS multi-modulo asistido por IA',
       docs: '/api/v1/docs',
       health: '/health',
     };
   }
 }
+

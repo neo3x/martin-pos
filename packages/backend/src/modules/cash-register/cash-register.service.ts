@@ -1,5 +1,7 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+﻿import { Injectable, BadRequestException, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+
+const MANAGER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
 
 @Injectable()
 export class CashRegisterService {
@@ -31,7 +33,7 @@ export class CashRegisterService {
     return register;
   }
 
-  async close(registerId: string, finalCash: number, userId: string) {
+  async close(registerId: string, finalCash: number, userId: string, requesterRole?: string) {
     const register = await this.prisma.cashRegister.findUnique({
       where: { id: registerId },
       include: { transactions: true },
@@ -42,12 +44,12 @@ export class CashRegisterService {
     }
 
     if (register.status === 'CLOSED') {
-      throw new BadRequestException('La caja ya está cerrada');
+      throw new BadRequestException('La caja ya esta cerrada');
     }
 
-    // Verify the user closing is the owner or an admin
-    if (register.userId !== userId) {
-      throw new ForbiddenException('Solo el usuario que abrió la caja puede cerrarla');
+    const canCloseForeignRegister = requesterRole ? MANAGER_ROLES.includes(requesterRole) : false;
+    if (register.userId !== userId && !canCloseForeignRegister) {
+      throw new ForbiddenException('Solo el usuario que abrio la caja puede cerrarla');
     }
 
     if (finalCash < 0) {
@@ -76,6 +78,16 @@ export class CashRegisterService {
         closedAt: new Date(),
         status: 'CLOSED',
       },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+      },
     });
 
     this.logger.log(
@@ -85,27 +97,210 @@ export class CashRegisterService {
     return closed;
   }
 
+  async createMovement(
+    registerId: string,
+    branchId: string,
+    userId: string,
+    requesterRole: string,
+    data: {
+      type: 'INCOME' | 'EXPENSE';
+      paymentMethod: string;
+      amount: number;
+      description: string;
+    }
+  ) {
+    const register = await this.prisma.cashRegister.findFirst({
+      where: {
+        id: registerId,
+        branchId,
+      },
+    });
+
+    if (!register) {
+      throw new NotFoundException('Caja no encontrada');
+    }
+
+    if (register.status !== 'OPEN') {
+      throw new BadRequestException('Solo se pueden registrar movimientos en una caja abierta');
+    }
+
+    const canOperate = register.userId === userId || MANAGER_ROLES.includes(requesterRole);
+    if (!canOperate) {
+      throw new ForbiddenException('No tiene permisos para registrar movimientos en esta caja');
+    }
+
+    const amount = Number(data.amount || 0);
+    if (amount <= 0) {
+      throw new BadRequestException('El monto del movimiento debe ser mayor a cero');
+    }
+
+    const [transaction] = await this.prisma.$transaction([
+      this.prisma.cashTransaction.create({
+        data: {
+          cashRegisterId: register.id,
+          userId,
+          type: data.type,
+          paymentMethod: data.paymentMethod as any,
+          amount,
+          description: data.description,
+        },
+      }),
+      this.prisma.cashRegister.update({
+        where: { id: register.id },
+        data: {
+          ...(data.type === 'INCOME'
+            ? {
+                totalSales: {
+                  increment: amount,
+                },
+              }
+            : {
+                totalExpenses: {
+                  increment: amount,
+                },
+              }),
+        },
+      }),
+    ]);
+
+    return transaction;
+  }
+
   async getCurrentRegister(userId: string, branchId: string) {
     const register = await this.prisma.cashRegister.findFirst({
       where: { userId, branchId, status: 'OPEN' },
-      include: { transactions: true },
+      include: {
+        transactions: {
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                role: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!register) {
       return null;
     }
 
+    return this.computeRegisterMetrics(register);
+  }
+
+  async getHistory(branchId: string, filters?: { from?: Date; to?: Date; limit?: number }) {
+    const registers = await this.prisma.cashRegister.findMany({
+      where: {
+        branchId,
+        ...(filters?.from && filters?.to
+          ? {
+              openedAt: {
+                gte: filters.from,
+                lte: filters.to,
+              },
+            }
+          : {}),
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+        transactions: true,
+      },
+      orderBy: { openedAt: 'desc' },
+      take: filters?.limit || 30,
+    });
+
+    return registers.map((register) => this.computeRegisterMetrics(register));
+  }
+
+  async getShiftSummary(branchId: string, filters?: { from?: Date; to?: Date }) {
+    const registers = await this.prisma.cashRegister.findMany({
+      where: {
+        branchId,
+        ...(filters?.from && filters?.to
+          ? {
+              openedAt: {
+                gte: filters.from,
+                lte: filters.to,
+              },
+            }
+          : {}),
+      },
+      include: {
+        transactions: true,
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+          },
+        },
+      },
+      orderBy: { openedAt: 'desc' },
+    });
+
+    const normalized = registers.map((register) => this.computeRegisterMetrics(register));
+
+    const salesByCashier = normalized.reduce((acc, register) => {
+      const key = register.userId;
+      const name = register.user ? `${register.user.firstName} ${register.user.lastName}` : 'Sin usuario';
+      if (!acc[key]) {
+        acc[key] = {
+          userId: key,
+          name,
+          role: register.user?.role || 'CASHIER',
+          shifts: 0,
+          sales: 0,
+          expenses: 0,
+          difference: 0,
+        };
+      }
+
+      acc[key].shifts += 1;
+      acc[key].sales += Number(register.incomeTotal || 0);
+      acc[key].expenses += Number(register.expenseTotal || 0);
+      acc[key].difference += Number(register.difference || 0);
+      return acc;
+    }, {} as Record<string, { userId: string; name: string; role: string; shifts: number; sales: number; expenses: number; difference: number }>);
+
+    return {
+      totalShifts: normalized.length,
+      openShifts: normalized.filter((register) => register.status === 'OPEN').length,
+      closedShifts: normalized.filter((register) => register.status === 'CLOSED').length,
+      totalIncome: normalized.reduce((sum, register) => sum + Number(register.incomeTotal || 0), 0),
+      totalExpenses: normalized.reduce((sum, register) => sum + Number(register.expenseTotal || 0), 0),
+      totalDifference: normalized.reduce((sum, register) => sum + Number(register.difference || 0), 0),
+      salesByCashier: Object.values(salesByCashier as any).sort((a: any, b: any) => b.sales - a.sales),
+      shifts: normalized,
+    };
+  }
+
+  private computeRegisterMetrics(register: any) {
     const cashSales = register.transactions
-      .filter((tx) => tx.type === 'INCOME' && tx.paymentMethod === 'CASH')
-      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+      .filter((tx: any) => tx.type === 'INCOME' && tx.paymentMethod === 'CASH')
+      .reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
 
     const incomeTotal = register.transactions
-      .filter((tx) => tx.type === 'INCOME')
-      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+      .filter((tx: any) => tx.type === 'INCOME')
+      .reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
 
     const expenseTotal = register.transactions
-      .filter((tx) => tx.type === 'EXPENSE')
-      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+      .filter((tx: any) => tx.type === 'EXPENSE')
+      .reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
+
+    const expectedCash = Number(register.initialCash || 0) + incomeTotal - expenseTotal;
 
     return {
       ...register,
@@ -113,6 +308,13 @@ export class CashRegisterService {
       cashSales,
       incomeTotal,
       expenseTotal,
+      expectedCash,
+      difference:
+        register.status === 'CLOSED'
+          ? Number(register.difference || 0)
+          : Number(register.finalCash || expectedCash) - expectedCash,
     };
   }
 }
+
+

@@ -1,4 +1,4 @@
-export enum ModuleType {
+﻿export enum ModuleType {
   RESTAURANT = 'RESTAURANT',
   BOOKSTORE = 'BOOKSTORE',
   MINIMARKET = 'MINIMARKET',
@@ -11,6 +11,8 @@ export enum UserRole {
   ADMIN = 'ADMIN',
   MANAGER = 'MANAGER',
   CASHIER = 'CASHIER',
+  SELLER = 'SELLER',
+  STOCKER = 'STOCKER',
   WAITER = 'WAITER',
   KITCHEN = 'KITCHEN',
   VIEWER = 'VIEWER',
@@ -97,3 +99,5 @@ export enum TransactionType {
   INCOME = 'INCOME',
   EXPENSE = 'EXPENSE',
 }
+
+

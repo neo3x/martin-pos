@@ -1,4 +1,14 @@
-import { IsArray, IsString, IsNumber, IsOptional, ValidateNested, ArrayMinSize, Min, IsEnum, IsBoolean } from 'class-validator';
+﻿import {
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from '@martin-pos/shared';
 
@@ -22,10 +32,15 @@ export class SaleItemDto {
   @IsOptional()
   @IsString()
   notes?: string;
+}
 
-  @IsOptional()
-  @IsBoolean()
-  ageVerified?: boolean;
+export class SalePaymentDto {
+  @IsEnum(PaymentMethod, { message: 'Metodo de pago invalido' })
+  paymentMethod: PaymentMethod;
+
+  @IsNumber({}, { message: 'El monto del pago debe ser numerico' })
+  @Min(0.01, { message: 'El monto del pago debe ser mayor a cero' })
+  amount: number;
 }
 
 export class CreateSaleDto {
@@ -35,8 +50,15 @@ export class CreateSaleDto {
   @Type(() => SaleItemDto)
   items: SaleItemDto[];
 
-  @IsEnum(PaymentMethod, { message: 'Método de pago inválido' })
+  @IsEnum(PaymentMethod, { message: 'Metodo de pago invalido' })
   paymentMethod: PaymentMethod;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => SalePaymentDto)
+  payments?: SalePaymentDto[];
 
   @IsOptional()
   @IsString()
@@ -58,4 +80,26 @@ export class CreateSaleDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  ageVerified?: boolean;
+
+  @IsOptional()
+  @IsString()
+  promotionId?: string;
+
+  @IsOptional()
+  @IsString()
+  campaignTag?: string;
+
+  @IsOptional()
+  @IsString()
+  packName?: string;
+
+  @IsOptional()
+  @IsString()
+  inputMethod?: string;
 }
+
+

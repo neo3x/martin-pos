@@ -95,7 +95,9 @@ export class AuthService {
       moduleType: activeModule,
       branchName: branch?.name || null,
       availableModules,
-      isDemo: String(user.email || '').includes('@demo.martinpos.local'),
+      isDemo:
+        String(user.email || '').includes('@demo.omnipunto.local') ||
+        String(user.email || '').includes('@demo.martinpos.local'),
     };
 
     const payload = {
@@ -171,7 +173,10 @@ export class AuthService {
 
     let branch = await this.prisma.branch.findFirst({
       where: {
-        email: `demo.${moduleSlug}@martinpos.local`,
+        OR: [
+          { email: `demo.${moduleSlug}@omnipunto.local` },
+          { email: `demo.${moduleSlug}@martinpos.local` },
+        ],
       },
     });
 
@@ -181,7 +186,7 @@ export class AuthService {
           name: `Demo ${this.moduleLabel(safeModule)}`,
           address: 'Demo Street 123',
           phone: '+56911111111',
-          email: `demo.${moduleSlug}@martinpos.local`,
+          email: `demo.${moduleSlug}@omnipunto.local`,
           moduleType: safeModule,
           config: {
             currency: 'CLP',
@@ -310,6 +315,26 @@ export class AuthService {
       ];
     }
 
+    if (moduleType === ModuleType.MINIMARKET) {
+      return [
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+        UserRole.CASHIER,
+        UserRole.STOCKER,
+        UserRole.VIEWER,
+      ];
+    }
+
+    if (moduleType === ModuleType.BOTILLERIA || moduleType === ModuleType.BOOKSTORE) {
+      return [
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+        UserRole.CASHIER,
+        UserRole.SELLER,
+        UserRole.VIEWER,
+      ];
+    }
+
     return [
       UserRole.ADMIN,
       UserRole.MANAGER,
@@ -326,13 +351,15 @@ export class AuthService {
       [UserRole.ADMIN]: { firstName: 'Admin', lastName: 'Demo' },
       [UserRole.MANAGER]: { firstName: 'Encargado', lastName: 'Demo' },
       [UserRole.CASHIER]: { firstName: 'Cajero', lastName: 'Demo' },
+      [UserRole.SELLER]: { firstName: 'Vendedor', lastName: 'Demo' },
+      [UserRole.STOCKER]: { firstName: 'Reponedor', lastName: 'Demo' },
       [UserRole.WAITER]: { firstName: 'Garzon', lastName: 'Demo' },
       [UserRole.KITCHEN]: { firstName: 'Cocina', lastName: 'Demo' },
       [UserRole.VIEWER]: { firstName: 'Consulta', lastName: 'Demo' },
     };
 
     return {
-      email: `demo.${moduleSlug}.${roleSlug}@demo.martinpos.local`,
+      email: `demo.${moduleSlug}.${roleSlug}@demo.omnipunto.local`,
       firstName: roleNameMap[role].firstName,
       lastName: `${roleNameMap[role].lastName} ${this.moduleLabel(moduleType)}`,
     };
@@ -535,14 +562,18 @@ export class AuthService {
       }
     }
 
+    await this.seedModulePromotionsAndRules(branchId, moduleType, createdProducts);
+
     if (moduleType === ModuleType.RESTAURANT) {
       const tables: any[] = [];
+      const sectors = ['Salon Principal', 'Terraza', 'Barra'];
       for (let i = 1; i <= 10; i += 1) {
         const tableNumber = String(i);
         const existing = await this.prisma.table.findFirst({
           where: { branchId, number: tableNumber, deletedAt: null },
         });
         const isOccupied = i % 3 === 0;
+        const sector = sectors[(i - 1) % sectors.length];
         const table = existing
           ? await this.prisma.table.update({
               where: { id: existing.id },
@@ -550,6 +581,7 @@ export class AuthService {
                 status: isOccupied ? 'OCCUPIED' : 'AVAILABLE',
                 currentDiners: isOccupied ? 2 + (i % 4) : 0,
                 openedAt: isOccupied ? new Date() : null,
+                sector,
               },
             })
           : await this.prisma.table.create({
@@ -560,6 +592,7 @@ export class AuthService {
                 status: isOccupied ? 'OCCUPIED' : 'AVAILABLE',
                 currentDiners: isOccupied ? 2 + (i % 4) : 0,
                 openedAt: isOccupied ? new Date() : null,
+                sector,
               },
             });
         tables.push(table);
@@ -602,6 +635,232 @@ export class AuthService {
           },
         });
       }
+
+      const reservationBlueprint = [
+        { customerName: 'Reserva Familia Soto', partySize: 4, tableIndex: 1, hour: 13, status: 'CONFIRMED' as const },
+        { customerName: 'Reserva Oficina Norte', partySize: 6, tableIndex: 2, hour: 15, status: 'PENDING' as const },
+        { customerName: 'Reserva Cumpleanos Diaz', partySize: 5, tableIndex: 4, hour: 20, status: 'CONFIRMED' as const },
+      ];
+
+      for (const [index, blueprint] of reservationBlueprint.entries()) {
+        const reservationAt = new Date();
+        reservationAt.setHours(blueprint.hour, index === 0 ? 0 : 30, 0, 0);
+        const table = tables[blueprint.tableIndex % tables.length];
+
+        const exists = await this.prisma.reservation.findFirst({
+          where: {
+            branchId,
+            customerName: blueprint.customerName,
+            reservationAt,
+            deletedAt: null,
+          },
+        });
+
+        if (!exists) {
+          await this.prisma.reservation.create({
+            data: {
+              branchId,
+              createdById: userId,
+              customerName: blueprint.customerName,
+              customerPhone: '+56990000000',
+              partySize: blueprint.partySize,
+              reservationAt,
+              tableId: table.id,
+              status: blueprint.status,
+              notes: 'Reserva demo restaurante',
+            },
+          });
+        }
+
+        if (['PENDING', 'CONFIRMED'].includes(blueprint.status)) {
+          await this.prisma.table.update({
+            where: { id: table.id },
+            data: { status: 'RESERVED' },
+          });
+        }
+      }
+    }
+  }
+
+  private async seedModulePromotionsAndRules(branchId: string, moduleType: ModuleType, createdProducts: any[]) {
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() - 3);
+    const endDate = new Date(now);
+    endDate.setDate(endDate.getDate() + 45);
+
+    const createOrUpdatePromotion = async (payload: {
+      name: string;
+      description: string;
+      type: 'DISCOUNT' | 'COMBO' | 'SEASONAL';
+      discountType: 'PERCENTAGE' | 'FIXED_AMOUNT';
+      discountValue: number;
+      conditions?: Record<string, any>;
+      comboProductSkus?: Array<{ sku: string; quantity?: number }>;
+    }) => {
+      const existing = await this.prisma.promotion.findFirst({
+        where: {
+          branchId,
+          name: payload.name,
+        },
+      });
+
+      const promotion = existing
+        ? await this.prisma.promotion.update({
+            where: { id: existing.id },
+            data: {
+              description: payload.description,
+              type: payload.type as any,
+              discountType: payload.discountType as any,
+              discountValue: payload.discountValue,
+              startDate,
+              endDate,
+              isActive: true,
+              conditions: payload.conditions || {},
+            },
+          })
+        : await this.prisma.promotion.create({
+            data: {
+              branchId,
+              name: payload.name,
+              description: payload.description,
+              type: payload.type as any,
+              discountType: payload.discountType as any,
+              discountValue: payload.discountValue,
+              startDate,
+              endDate,
+              isActive: true,
+              conditions: payload.conditions || {},
+            },
+          });
+
+      if (payload.comboProductSkus?.length) {
+        await this.prisma.comboProduct.deleteMany({
+          where: {
+            promotionId: promotion.id,
+          },
+        });
+
+        const comboRows = payload.comboProductSkus
+          .map((row) => {
+            const product = createdProducts.find((item) => item.sku === row.sku);
+            if (!product) {
+              return null;
+            }
+
+            return {
+              promotionId: promotion.id,
+              productId: product.id,
+              quantity: row.quantity || 1,
+            };
+          })
+          .filter(Boolean) as Array<{ promotionId: string; productId: string; quantity: number }>;
+
+        if (comboRows.length) {
+          await this.prisma.comboProduct.createMany({
+            data: comboRows,
+          });
+        }
+      }
+    };
+
+    if (moduleType === ModuleType.MINIMARKET) {
+      await createOrUpdatePromotion({
+        name: 'Combo Colacion Express',
+        description: 'Combo de alta rotacion para caja rapida',
+        type: 'COMBO',
+        discountType: 'FIXED_AMOUNT',
+        discountValue: 650,
+        conditions: { minSubtotal: 2500, channel: 'quick-sale' },
+        comboProductSkus: [
+          { sku: 'MIN-BEB-001', quantity: 1 },
+          { sku: 'MIN-SNK-001', quantity: 1 },
+        ],
+      });
+
+      await createOrUpdatePromotion({
+        name: 'Reposicion Nocturna Snacks',
+        description: 'Promocion para acelerar salida de snacks',
+        type: 'DISCOUNT',
+        discountType: 'PERCENTAGE',
+        discountValue: 8,
+        conditions: { categories: ['Snacks'], minSubtotal: 2000 },
+      });
+      return;
+    }
+
+    if (moduleType === ModuleType.BOTILLERIA) {
+      await createOrUpdatePromotion({
+        name: 'Pack Piscola Fin de Semana',
+        description: 'Pisco + mixers con descuento especial',
+        type: 'COMBO',
+        discountType: 'FIXED_AMOUNT',
+        discountValue: 1200,
+        conditions: { minSubtotal: 6000, requiresAgeCheck: true },
+        comboProductSkus: [
+          { sku: 'BOT-DES-002', quantity: 1 },
+          { sku: 'BOT-MIX-002', quantity: 2 },
+        ],
+      });
+
+      await createOrUpdatePromotion({
+        name: 'Promo Cervezas por Volumen',
+        description: 'Descuento automatico por volumen en cervezas',
+        type: 'DISCOUNT',
+        discountType: 'PERCENTAGE',
+        discountValue: 10,
+        conditions: { minSubtotal: 5000, categories: ['Cervezas'] },
+      });
+
+      for (let dayOfWeek = 0; dayOfWeek <= 6; dayOfWeek += 1) {
+        await this.prisma.saleHoursRestriction.upsert({
+          where: {
+            branchId_dayOfWeek: {
+              branchId,
+              dayOfWeek,
+            },
+          },
+          create: {
+            branchId,
+            dayOfWeek,
+            openTime: dayOfWeek === 5 || dayOfWeek === 6 ? '10:00' : '11:00',
+            closeTime: dayOfWeek === 5 || dayOfWeek === 6 ? '23:45' : '22:30',
+            isEnabled: true,
+          },
+          update: {
+            openTime: dayOfWeek === 5 || dayOfWeek === 6 ? '10:00' : '11:00',
+            closeTime: dayOfWeek === 5 || dayOfWeek === 6 ? '23:45' : '22:30',
+            isEnabled: true,
+          },
+        });
+      }
+
+      return;
+    }
+
+    if (moduleType === ModuleType.BOOKSTORE) {
+      await createOrUpdatePromotion({
+        name: 'Campana Escolar Marzo',
+        description: 'Descuento por temporada escolar',
+        type: 'SEASONAL',
+        discountType: 'PERCENTAGE',
+        discountValue: 12,
+        conditions: { season: 'Escolar', minSubtotal: 10000 },
+      });
+
+      await createOrUpdatePromotion({
+        name: 'Combo Oficina Base',
+        description: 'Pack de reposicion para oficina y estudio',
+        type: 'COMBO',
+        discountType: 'FIXED_AMOUNT',
+        discountValue: 900,
+        conditions: { minSubtotal: 7000, campaign: 'Oficina' },
+        comboProductSkus: [
+          { sku: 'LIB-OFI-001', quantity: 1 },
+          { sku: 'LIB-OFI-002', quantity: 2 },
+          { sku: 'LIB-ESC-001', quantity: 1 },
+        ],
+      });
     }
   }
 
@@ -1011,3 +1270,5 @@ export class AuthService {
     };
   }
 }
+
+

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -7,7 +7,7 @@ export class PromotionsService {
 
   async getActivePromotions(branchId: string) {
     const now = new Date();
-    return this.prisma.promotion.findMany({
+    const promotions = await this.prisma.promotion.findMany({
       where: {
         branchId,
         isActive: true,
@@ -16,6 +16,25 @@ export class PromotionsService {
       },
       include: { comboProducts: true },
     });
+
+    const productIds = Array.from(
+      new Set(promotions.flatMap((promotion) => promotion.comboProducts.map((combo) => combo.productId)))
+    );
+    const products = productIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, name: true, price: true, sku: true },
+        })
+      : [];
+    const productMap = new Map(products.map((product) => [product.id, product]));
+
+    return promotions.map((promotion) => ({
+      ...promotion,
+      comboProducts: promotion.comboProducts.map((combo) => ({
+        ...combo,
+        product: productMap.get(combo.productId) || null,
+      })),
+    }));
   }
 
   async applyPromotion(promotionId: string, saleAmount: number) {
@@ -28,3 +47,5 @@ export class PromotionsService {
     }
   }
 }
+
+

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+﻿import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -128,7 +128,7 @@ export class BotilleriaService {
     verifiedBy: string;
     notes?: string;
   }) {
-    // Verificar si es mayor de 18 años
+    // Verificar si es mayor de 18 aÃ±os
     let isApproved = true;
     if (data.customerBirthDate) {
       const today = new Date();
@@ -175,7 +175,7 @@ export class BotilleriaService {
     if (!restriction || !restriction.isEnabled) {
       return {
         isAllowed: true,
-        message: 'Sin restricción de horario',
+        message: 'Sin restricciÃ³n de horario',
         currentTime,
       };
     }
@@ -192,6 +192,183 @@ export class BotilleriaService {
         open: restriction.openTime,
         close: restriction.closeTime,
       },
+    };
+  }
+
+  async setSaleHoursRestriction(data: {
+    branchId: string;
+    dayOfWeek: number;
+    openTime: string;
+    closeTime: string;
+    isEnabled?: boolean;
+  }) {
+    return this.prisma.saleHoursRestriction.upsert({
+      where: {
+        branchId_dayOfWeek: {
+          branchId: data.branchId,
+          dayOfWeek: data.dayOfWeek,
+        },
+      },
+      create: {
+        branchId: data.branchId,
+        dayOfWeek: data.dayOfWeek,
+        openTime: data.openTime,
+        closeTime: data.closeTime,
+        isEnabled: data.isEnabled ?? true,
+      },
+      update: {
+        openTime: data.openTime,
+        closeTime: data.closeTime,
+        isEnabled: data.isEnabled ?? true,
+      },
+    });
+  }
+
+  async getPackPromotions(branchId: string) {
+    const now = new Date();
+    const promotions = await this.prisma.promotion.findMany({
+      where: {
+        branchId,
+        isActive: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+        type: { in: ['COMBO', 'DISCOUNT'] },
+      },
+      include: {
+        comboProducts: true,
+      },
+      orderBy: { endDate: 'asc' },
+    });
+
+    const productIds = Array.from(
+      new Set(promotions.flatMap((promotion) => promotion.comboProducts.map((combo) => combo.productId)))
+    );
+    const products = productIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+          },
+        })
+      : [];
+    const productMap = new Map(products.map((product) => [product.id, product]));
+
+    return promotions.map((promotion) => ({
+      ...promotion,
+      comboProducts: promotion.comboProducts.map((combo) => ({
+        ...combo,
+        product: productMap.get(combo.productId) || null,
+      })),
+    }));
+  }
+
+  async getOperationalDashboard(branchId: string) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+
+    const [sales, activePromotions, hoursRestriction] = await Promise.all([
+      this.prisma.sale.findMany({
+        where: {
+          branchId,
+          status: 'COMPLETED',
+          createdAt: {
+            gte: start,
+            lte: end,
+          },
+        },
+        include: {
+          items: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              role: true,
+            },
+          },
+        },
+      }),
+      this.getPackPromotions(branchId),
+      this.checkSaleHoursRestriction(branchId),
+    ]);
+
+    const productIds = Array.from(new Set(sales.flatMap((sale) => sale.items.map((item) => item.productId))));
+    const alcoholProducts = productIds.length
+      ? await this.prisma.alcoholicProduct.findMany({
+          where: {
+            productId: { in: productIds },
+          },
+          select: {
+            productId: true,
+            category: true,
+            alcoholContent: true,
+          },
+        })
+      : [];
+
+    const categories = alcoholProducts.reduce((acc, item) => {
+      const key = item.category;
+      if (!acc[key]) {
+        acc[key] = { category: key, units: 0 };
+      }
+      acc[key].units += 1;
+      return acc;
+    }, {} as Record<string, { category: string; units: number }>);
+
+    const topAlcoholCategories = Object.values(categories)
+      .sort((a, b) => b.units - a.units)
+      .slice(0, 5);
+
+    const salesBySeller = sales.reduce((acc, sale) => {
+      const key = sale.userId;
+      const label = sale.user ? `${sale.user.firstName} ${sale.user.lastName}` : 'Sin usuario';
+      if (!acc[key]) {
+        acc[key] = {
+          userId: key,
+          name: label,
+          role: sale.user?.role || 'CASHIER',
+          count: 0,
+          amount: 0,
+        };
+      }
+      acc[key].count += 1;
+      acc[key].amount += Number(sale.total);
+      return acc;
+    }, {} as Record<string, { userId: string; name: string; role: string; count: number; amount: number }>);
+
+    const premiumProducts = await this.prisma.product.findMany({
+      where: {
+        branchId,
+        deletedAt: null,
+        price: { gte: 12000 },
+      },
+      select: { id: true, name: true, price: true },
+      orderBy: { price: 'desc' },
+      take: 6,
+    });
+
+    const totalAmount = sales.reduce((sum, sale) => sum + Number(sale.total), 0);
+
+    return {
+      sales: {
+        totalSales: sales.length,
+        totalAmount,
+        averageTicket: sales.length > 0 ? totalAmount / sales.length : 0,
+      },
+      promotions: {
+        activeCount: activePromotions.length,
+        packPromotions: activePromotions.slice(0, 6),
+      },
+      categories: {
+        topAlcoholCategories,
+      },
+      salesBySeller: Object.values(salesBySeller).sort((a, b) => b.amount - a.amount),
+      premiumProducts,
+      hoursRestriction,
     };
   }
 
@@ -502,7 +679,7 @@ export class BotilleriaService {
     });
 
     if (matchedCategories.length === 0) {
-      return { food, recommendations: [], message: 'No se encontraron maridajes específicos' };
+      return { food, recommendations: [], message: 'No se encontraron maridajes especÃ­ficos' };
     }
 
     const products = await this.prisma.alcoholicProduct.findMany({
@@ -520,3 +697,5 @@ export class BotilleriaService {
     };
   }
 }
+
+

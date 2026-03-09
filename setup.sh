@@ -77,6 +77,81 @@ run_install_script() {
   pause_enter
 }
 
+ensure_prisma_services() {
+  echo
+  echo "[INFO] Levantando servicios requeridos (postgres + backend)..."
+  if ! "${DOCKER_COMPOSE[@]}" -f "$COMPOSE_FILE" up -d postgres backend; then
+    echo "[ERROR] No fue posible iniciar postgres/backend."
+    echo
+    return 1
+  fi
+  return 0
+}
+
+run_prisma_migrate() {
+  echo
+  echo "[INFO] Ejecutando Prisma migrate deploy..."
+  if ! "${DOCKER_COMPOSE[@]}" -f "$COMPOSE_FILE" exec backend sh -lc "/app/packages/database/node_modules/.bin/prisma migrate deploy --schema=/app/packages/database/prisma/schema.prisma"; then
+    echo "[ERROR] No fue posible ejecutar migrate deploy."
+    echo "        Verifica que el backend este corriendo y tenga acceso a la base de datos."
+    return 1
+  fi
+  return 0
+}
+
+run_prisma_seed() {
+  echo
+  echo "[INFO] Ejecutando seed Prisma..."
+  if ! "${DOCKER_COMPOSE[@]}" -f "$COMPOSE_FILE" exec backend sh -lc "cd /app/packages/database && npx ts-node prisma/seed.ts"; then
+    echo "[ERROR] El seed fallo. Revisa logs de backend y estado de la base de datos."
+    return 1
+  fi
+  echo "[INFO] Seed completado."
+  return 0
+}
+
+prisma_migrate_only() {
+  if ! ensure_prisma_services; then
+    echo
+    pause_enter
+    return
+  fi
+
+  if ! run_prisma_migrate; then
+    echo
+    pause_enter
+    return
+  fi
+
+  echo
+  echo "[INFO] Migraciones Prisma aplicadas correctamente."
+  pause_enter
+}
+
+prisma_migrate_and_seed() {
+  if ! ensure_prisma_services; then
+    echo
+    pause_enter
+    return
+  fi
+
+  if ! run_prisma_migrate; then
+    echo
+    pause_enter
+    return
+  fi
+
+  if ! run_prisma_seed; then
+    echo
+    pause_enter
+    return
+  fi
+
+  echo
+  echo "[INFO] Migraciones y seed Prisma finalizados."
+  pause_enter
+}
+
 cleanup_all() {
   echo
   echo "[WARN] Esto eliminara cache de build, contenedores, imagenes y volumenes no usados."
@@ -95,7 +170,7 @@ while true; do
   clear
   cat <<EOF
 ==========================================
-  Martin POS - Deploy Setup
+  OmniPunto - Deploy Setup
   Compose file: $COMPOSE_FILE
 ==========================================
 
@@ -103,19 +178,23 @@ while true; do
 2) Detener servicios
 3) Iniciar servicios
 4) Ejecutar instalador (scripts/install.sh)
-5) Borrar cache, contenedores e imagenes
-6) Salir
+5) Prisma: solo migraciones
+6) Prisma: migraciones + seed
+7) Borrar cache, contenedores e imagenes
+8) Salir
 EOF
 
   echo
-  read -r -p "Selecciona una opcion [1-6]: " option
+  read -r -p "Selecciona una opcion [1-8]: " option
   case "$option" in
     1) build_and_up ;;
     2) stop_services ;;
     3) start_services ;;
     4) run_install_script ;;
-    5) cleanup_all ;;
-    6) echo "Saliendo..."; exit 0 ;;
+    5) prisma_migrate_only ;;
+    6) prisma_migrate_and_seed ;;
+    7) cleanup_all ;;
+    8) echo "Saliendo..."; exit 0 ;;
     *) echo "Opcion invalida."; pause_enter ;;
   esac
 done

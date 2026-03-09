@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -25,21 +25,31 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
 import { MODULE_NAME_MAP } from '@/lib/modules';
+import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
 
 type ModuleKey = 'RESTAURANT' | 'MINIMARKET' | 'BOTILLERIA' | 'BOOKSTORE' | 'ALL';
-type RoleKey = 'SUPER_ADMIN' | 'ADMIN' | 'MANAGER' | 'CASHIER' | 'WAITER' | 'KITCHEN' | 'VIEWER';
+type RoleKey =
+  | 'SUPER_ADMIN'
+  | 'ADMIN'
+  | 'MANAGER'
+  | 'CASHIER'
+  | 'SELLER'
+  | 'STOCKER'
+  | 'WAITER'
+  | 'KITCHEN'
+  | 'VIEWER';
 
 const ALL_MODULES = ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'];
-const ALL_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'WAITER', 'KITCHEN', 'VIEWER'];
+const ALL_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER', 'STOCKER', 'WAITER', 'KITCHEN', 'VIEWER'];
 const MANAGEMENT_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
-const CASH_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'];
+const CASH_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER'];
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ALL_MODULES, roles: ALL_ROLES },
-  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'WAITER'] },
+  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER', 'WAITER'] },
   { name: 'Caja', href: '/dashboard/cash-register', icon: Banknote, modules: ALL_MODULES, roles: CASH_ROLES },
-  { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
-  { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
+  { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ALL_MODULES, roles: [...MANAGEMENT_ROLES, 'STOCKER'] },
+  { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ALL_MODULES, roles: [...MANAGEMENT_ROLES, 'STOCKER'] },
   { name: 'Transferencias', href: '/dashboard/transfers', icon: Repeat, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
   { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ALL_MODULES, roles: [...CASH_ROLES, 'VIEWER'] },
   { name: 'Fidelizacion', href: '/dashboard/loyalty', icon: Star, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'] },
@@ -69,8 +79,8 @@ export function Sidebar() {
   return (
     <aside className="hidden w-72 flex-col border-r border-slate-800 bg-slate-950 text-slate-100 lg:flex">
       <div className="border-b border-slate-800 px-6 py-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-300">Martin POS</p>
-        <p className="mt-2 text-2xl font-black">Control Center</p>
+        <OmniPuntoLogo showSlogan inverted textClassName="text-left" />
+        <p className="mt-2 text-sm font-bold text-indigo-200">Control Center</p>
         <p className="mt-1 text-xs text-slate-400">Modulo activo: {moduleLabel}</p>
       </div>
 
@@ -107,3 +117,5 @@ export function Sidebar() {
     </aside>
   );
 }
+
+

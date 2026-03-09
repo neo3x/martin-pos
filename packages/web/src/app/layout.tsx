@@ -3,8 +3,8 @@ import './globals.css';
 import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
-  title: 'Martin POS - Sistema de Ventas',
-  description: 'Sistema POS completo asistido por IA',
+  title: 'OmniPunto - La plataforma que se adapta a tu negocio.',
+  description: 'OmniPunto: POS SaaS modular para restaurantes, retail y comercios especializados.',
 };
 
 export default function RootLayout({

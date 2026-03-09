@@ -1,4 +1,4 @@
-// This is your Prisma schema file
+﻿// This is your Prisma schema file
 
 generator client {
   provider = "prisma-client-js"
@@ -42,6 +42,7 @@ model User {
   shifts             EmployeeShift[]
   commissions        Commission[]
   createdTransfers   InventoryTransfer[] @relation("TransferCreatedBy")
+  createdReservations Reservation[]      @relation("ReservationCreatedBy")
 
   @@index([email])
   @@index([branchId])
@@ -71,6 +72,7 @@ model Branch {
   inventoryAlerts    InventoryAlert[]
   customers          Customer[]
   tables             Table[]
+  reservations       Reservation[]
   orders             Order[]
   cashRegisters      CashRegister[]
   suppliers          Supplier[]
@@ -281,7 +283,7 @@ model Sale {
 
   // Relations
   items         SaleItem[]
-  cashTransaction CashTransaction?
+  cashTransactions CashTransaction[]
 
   @@index([saleNumber])
   @@index([branchId])
@@ -358,6 +360,7 @@ model Table {
   currentOrderId  String?
   currentDiners   Int         @default(0)
   openedAt        DateTime?
+  sector          String?
 
   branchId        String
   branch          Branch      @relation(fields: [branchId], references: [id])
@@ -368,12 +371,42 @@ model Table {
 
   // Relations
   orders          Order[]
+  reservations    Reservation[]
   sales           Sale[]
 
   @@unique([branchId, number])
   @@index([branchId])
   @@index([status])
   @@map("tables")
+}
+
+model Reservation {
+  id            String            @id @default(cuid())
+  customerName  String
+  customerPhone String?
+  partySize     Int
+  reservationAt DateTime
+  status        ReservationStatus @default(CONFIRMED)
+  notes         String?
+
+  tableId       String?
+  table         Table?            @relation(fields: [tableId], references: [id])
+
+  branchId      String
+  branch        Branch            @relation(fields: [branchId], references: [id])
+
+  createdById   String?
+  createdBy     User?             @relation("ReservationCreatedBy", fields: [createdById], references: [id])
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+
+  @@index([branchId])
+  @@index([reservationAt])
+  @@index([status])
+  @@index([tableId])
+  @@map("reservations")
 }
 
 model Order {
@@ -516,7 +549,7 @@ model CashTransaction {
   userId          String
   user            User            @relation(fields: [userId], references: [id])
 
-  saleId          String?         @unique
+  saleId          String?
   sale            Sale?           @relation(fields: [saleId], references: [id])
 
   createdAt       DateTime        @default(now())
@@ -524,6 +557,7 @@ model CashTransaction {
 
   @@index([cashRegisterId])
   @@index([type])
+  @@index([saleId])
   @@map("cash_transactions")
 }
 
@@ -1155,14 +1189,14 @@ model AlcoholicProduct {
   id                  String              @id @default(cuid())
   productId           String              @unique
   alcoholContent      Decimal             @db.Decimal(5, 2)  // % alcohol
-  vintage             Int?                // Añada
-  origin              String?             // País/región
+  vintage             Int?                // AÃ±ada
+  origin              String?             // PaÃ­s/regiÃ³n
   winery              String?             // Bodega
   grapeVariety        String?             // Cepa
   servingTemperature  String?             // Temperatura sugerida
   pairings            String?             // Maridajes
   tastingNotes        String?             @db.Text
-  rating              Decimal?            @db.Decimal(3, 1)  // Puntuación
+  rating              Decimal?            @db.Decimal(3, 1)  // PuntuaciÃ³n
   category            AlcoholCategory
   taxCategory         AlcoholTaxCategory  @default(STANDARD)
 
@@ -1363,7 +1397,7 @@ model TransbankTransaction {
   token               String?             @unique
   responseCode        Int?
   authorizationCode   String?
-  cardNumber          String?             // Últimos 4 dígitos
+  cardNumber          String?             // Ãšltimos 4 dÃ­gitos
   cardType            String?             // VISA, MASTERCARD, etc.
   installmentsNumber  Int?
   installmentsAmount  Int?
@@ -1415,13 +1449,13 @@ model TransbankConfig {
 
 model POSTerminal {
   id                  String            @id @default(cuid())
-  terminalId          String            @unique  // ID único del terminal
-  serialNumber        String?           // Número de serie
+  terminalId          String            @unique  // ID Ãºnico del terminal
+  serialNumber        String?           // NÃºmero de serie
   model               String?           // Modelo del equipo (VX520, VX680, etc.)
   name                String            // Nombre descriptivo
-  location            String?           // Ubicación en local
+  location            String?           // UbicaciÃ³n en local
 
-  // Conexión
+  // ConexiÃ³n
   connectionType      POSConnectionType @default(USB)
   port                String?           // COM3, /dev/ttyUSB0, IP:puerto
   baudRate            Int               @default(9600)
@@ -1433,7 +1467,7 @@ model POSTerminal {
   lastPingAt          DateTime?
   lastTransactionAt   DateTime?
 
-  // Configuración Transbank
+  // ConfiguraciÃ³n Transbank
   configId            String
   config              TransbankConfig   @relation(fields: [configId], references: [id])
 
@@ -1457,8 +1491,8 @@ model POSTransaction {
   terminalId          String
   terminal            POSTerminal         @relation(fields: [terminalId], references: [id])
 
-  // Datos de la transacción
-  operationCode       String              // Código de operación (venta, anulación, etc.)
+  // Datos de la transacciÃ³n
+  operationCode       String              // CÃ³digo de operaciÃ³n (venta, anulaciÃ³n, etc.)
   amount              Int                 // Monto en CLP
   tip                 Int                 @default(0)  // Propina
   totalAmount         Int                 // amount + tip
@@ -1471,7 +1505,7 @@ model POSTransaction {
   responseMessage     String?
 
   // Datos de la tarjeta (enmascarados)
-  cardNumber          String?             // Últimos 4 dígitos
+  cardNumber          String?             // Ãšltimos 4 dÃ­gitos
   cardType            String?             // VISA, MASTERCARD, AMEX, etc.
   cardBrand           String?             // DEBIT, CREDIT
 
@@ -1483,7 +1517,7 @@ model POSTransaction {
   transactionTime     String?
 
   // Datos adicionales
-  printData           String?             @db.Text  // Datos para impresión de voucher
+  printData           String?             @db.Text  // Datos para impresiÃ³n de voucher
   rawResponse         Json?               // Respuesta completa del terminal
 
   // Timestamps
@@ -1544,7 +1578,7 @@ model SIIConfig {
   id                  String    @id @default(cuid())
   branchId            String    @unique
   rutEmisor           String    // RUT de la empresa
-  razonSocial         String    // Razón social
+  razonSocial         String    // RazÃ³n social
   giroEmisor          String    // Giro comercial
   direccionOrigen     String
   comunaOrigen        String
@@ -1554,7 +1588,7 @@ model SIIConfig {
   certificatePath     String?
   certificatePassword String?
 
-  // CAF (Código de Autorización de Folios)
+  // CAF (CÃ³digo de AutorizaciÃ³n de Folios)
   cafBoletaPath       String?
   cafFacturaPath      String?
   cafNotaCreditoPath  String?
@@ -1581,7 +1615,7 @@ model DTEDocument {
   branchId            String
   saleId              String?
 
-  // Tipo de documento (33=Factura, 39=Boleta, 61=Nota Crédito)
+  // Tipo de documento (33=Factura, 39=Boleta, 61=Nota CrÃ©dito)
   tipoDTE             Int
   folio               Int
 
@@ -1604,7 +1638,7 @@ model DTEDocument {
   montoTotal          Int
 
   // Impuestos adicionales (ILA para alcohol)
-  tipoImpAdicional    Int?          // Código impuesto adicional
+  tipoImpAdicional    Int?          // CÃ³digo impuesto adicional
   tasaImpAdicional    Decimal?      @db.Decimal(5, 2)
   montoImpAdicional   Int?
 
@@ -1612,19 +1646,19 @@ model DTEDocument {
   status              DTEStatus     @default(DRAFT)
   trackId             String?       // ID de seguimiento SII
   estadoSII           String?       // Estado devuelto por SII
-  glosaEstadoSII      String?       // Descripción estado
+  glosaEstadoSII      String?       // DescripciÃ³n estado
 
   // XML y PDF
   xmlContent          String?       @db.Text
   xmlSigned           String?       @db.Text
   pdfUrl              String?
-  tedBarcode          String?       @db.Text  // Código de barras TED
+  tedBarcode          String?       @db.Text  // CÃ³digo de barras TED
 
   // Fechas
   fechaEmision        DateTime      @default(now())
   fechaVencimiento    DateTime?
 
-  // Referencias (para notas de crédito)
+  // Referencias (para notas de crÃ©dito)
   referenciaTipoDTE   Int?
   referenciaFolio     Int?
   referenciaRazon     String?
@@ -1697,6 +1731,8 @@ enum UserRole {
   ADMIN
   MANAGER
   CASHIER
+  SELLER
+  STOCKER
   WAITER
   KITCHEN
   VIEWER
@@ -1766,6 +1802,15 @@ enum OrderStatus {
   READY
   SERVED
   CANCELLED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
 }
 
 enum InputMethod {
@@ -2053,3 +2098,5 @@ enum POSBatchStatus {
   CLOSED
   ERROR
 }
+
+

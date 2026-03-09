@@ -7,6 +7,7 @@ import { ArrowRight, Building2, CheckCircle2 } from 'lucide-react';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 import { MODULES } from '@/lib/modules';
 import toast from 'react-hot-toast';
+import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -69,6 +70,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-[#eef2ff]">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-10 lg:flex-row lg:px-10">
         <section className="w-full rounded-3xl border border-indigo-100 bg-white p-8 shadow-lg shadow-indigo-100 lg:w-[46%]">
+          <OmniPuntoLogo showSlogan />
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">Alta de cuenta</p>
           <h1 className="text-3xl font-black text-slate-900">Configura tu negocio en minutos</h1>
           <p className="mt-3 text-sm text-slate-600">

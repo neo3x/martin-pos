@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+﻿import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 
@@ -18,6 +18,8 @@ import { AIModule } from './modules/ai/ai.module';
 
 // Module-specific
 import { RestaurantModule } from './modules/restaurant/restaurant.module';
+import { MinimarketModule } from './modules/minimarket/minimarket.module';
+import { BookstoreModule } from './modules/bookstore/bookstore.module';
 
 // New Extended Features
 import { LoyaltyModule } from './modules/loyalty/loyalty.module';
@@ -30,7 +32,7 @@ import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AdvancedAIModule } from './modules/advanced-ai/advanced-ai.module';
 import { FraudDetectionModule } from './modules/fraud-detection/fraud-detection.module';
 
-// Botillería Module
+// BotillerÃ­a Module
 import { BotilleriaModule } from './modules/botilleria/botilleria.module';
 
 // Payment & Invoicing (Chile)
@@ -70,6 +72,8 @@ import { HealthController } from './health.controller';
 
     // Module-specific
     RestaurantModule,
+    MinimarketModule,
+    BookstoreModule,
 
     // New Extended Features
     LoyaltyModule,
@@ -82,7 +86,7 @@ import { HealthController } from './health.controller';
     AdvancedAIModule,
     FraudDetectionModule,
 
-    // Botillería
+    // BotillerÃ­a
     BotilleriaModule,
 
     // Payment & Invoicing (Chile)
@@ -92,3 +96,5 @@ import { HealthController } from './health.controller';
   controllers: [HealthController],
 })
 export class AppModule {}
+
+

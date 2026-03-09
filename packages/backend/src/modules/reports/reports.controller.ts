@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
+﻿import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -15,4 +15,15 @@ export class ReportsController {
       new Date(to)
     );
   }
+
+  @Get('module')
+  getModuleReport(@Request() req, @Query('from') from: string, @Query('to') to: string) {
+    return this.reportsService.getModuleReport(
+      req.user.branchId,
+      new Date(from),
+      new Date(to)
+    );
+  }
 }
+
+

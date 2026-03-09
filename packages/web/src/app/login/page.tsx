@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -6,11 +6,12 @@ import { useRouter } from 'next/navigation';
 import { ArrowRight, KeyRound } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
+import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login } = useAuthStore();
-  const [email, setEmail] = useState('admin@martinpos.com');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('admin123');
   const [loading, setLoading] = useState(false);
 
@@ -32,16 +33,17 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#dbeafe_0%,_#eff6ff_45%,_#f8fafc_100%)] px-6 py-12 lg:px-10">
       <div className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-[1fr_1fr]">
         <section className="rounded-3xl border border-indigo-100 bg-white/90 p-8 shadow-lg shadow-indigo-100">
-          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Acceso seguro</p>
-          <h1 className="mt-2 text-4xl font-black text-slate-900">Bienvenido a Martin POS</h1>
+          <OmniPuntoLogo showSlogan />
+          <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-indigo-600">Acceso seguro</p>
+          <h1 className="mt-2 text-4xl font-black text-slate-900">Bienvenido a OmniPunto</h1>
           <p className="mt-3 text-sm text-slate-600">
             Ingresa para operar tu modulo de negocio con ventas, inventario, clientes y reportes.
           </p>
 
           <div className="mt-8 space-y-3 text-sm text-slate-700">
-            <p>• Flujo productivo para operacion real.</p>
-            <p>• Dashboard modular segun tu rubro.</p>
-            <p>• Demo separada de entorno real.</p>
+            <p>- Flujo productivo para operacion real.</p>
+            <p>- Dashboard modular segun tu rubro.</p>
+            <p>- Demo separada de entorno real.</p>
           </div>
 
           <div className="mt-8 grid gap-2 text-sm">
@@ -101,7 +103,7 @@ export default function LoginPage() {
 
           <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             Cuenta admin de referencia:
-            <div className="mt-1 font-mono text-slate-700">admin@martinpos.com / admin123</div>
+            <div className="mt-1 font-mono text-slate-700">admin / admin123</div>
           </div>
         </form>
       </div>

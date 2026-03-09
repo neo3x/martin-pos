@@ -1,4 +1,4 @@
-import {
+﻿import {
   Controller,
   Get,
   Post,
@@ -55,6 +55,32 @@ export class BotilleriaController {
     return this.botilleriaService.verifyAge({
       ...data,
       verifiedBy: req.user.id,
+    });
+  }
+
+  @Get('dashboard')
+  getDashboard(@Request() req: any) {
+    return this.botilleriaService.getOperationalDashboard(req.user.branchId);
+  }
+
+  @Get('promotions/packs')
+  getPackPromotions(@Request() req: any) {
+    return this.botilleriaService.getPackPromotions(req.user.branchId);
+  }
+
+  @Get('sale-hours/current')
+  checkCurrentSaleHours(@Request() req: any) {
+    return this.botilleriaService.checkSaleHoursRestriction(req.user.branchId);
+  }
+
+  @Post('sale-hours')
+  setSaleHours(
+    @Body() data: { dayOfWeek: number; openTime: string; closeTime: string; isEnabled?: boolean },
+    @Request() req: any
+  ) {
+    return this.botilleriaService.setSaleHoursRestriction({
+      branchId: req.user.branchId,
+      ...data,
     });
   }
 
@@ -155,3 +181,5 @@ export class BotilleriaController {
     return this.botilleriaService.getPairingRecommendation(food);
   }
 }
+
+

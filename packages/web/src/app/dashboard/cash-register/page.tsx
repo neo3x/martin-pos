@@ -1,29 +1,45 @@
-'use client';
+﻿'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { Banknote, DollarSign, Lock, Unlock, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
+import { Banknote, DollarSign, Lock, Unlock, ArrowUpCircle, ArrowDownCircle, WalletCards } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function CashRegisterPage() {
   const queryClient = useQueryClient();
   const [initialCash, setInitialCash] = useState('');
   const [finalCash, setFinalCash] = useState('');
+  const [movementType, setMovementType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
+  const [movementMethod, setMovementMethod] = useState('CASH');
+  const [movementAmount, setMovementAmount] = useState('');
+  const [movementDescription, setMovementDescription] = useState('');
 
   const { data: currentRegister, isLoading } = useQuery({
     queryKey: ['cash-register-current'],
     queryFn: () => api.get('/cash-register/current').then((res) => res.data),
   });
 
+  const { data: registerHistory } = useQuery({
+    queryKey: ['cash-register-history'],
+    queryFn: () => api.get('/cash-register/history').then((res) => res.data).catch(() => []),
+  });
+
+  const { data: registerSummary } = useQuery({
+    queryKey: ['cash-register-summary'],
+    queryFn: () => api.get('/cash-register/summary').then((res) => res.data).catch(() => null),
+  });
+
   const openMutation = useMutation({
     mutationFn: (data: { initialCash: number }) => api.post('/cash-register/open', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cash-register-current'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-register-history'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-register-summary'] });
       setInitialCash('');
       toast.success('Caja abierta exitosamente');
     },
-    onError: () => toast.error('Error al abrir caja'),
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'Error al abrir caja'),
   });
 
   const closeMutation = useMutation({
@@ -31,20 +47,42 @@ export default function CashRegisterPage() {
       api.put(`/cash-register/${currentRegister?.id}/close`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cash-register-current'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-register-history'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-register-summary'] });
       setFinalCash('');
       toast.success('Caja cerrada exitosamente');
     },
-    onError: () => toast.error('Error al cerrar caja'),
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'Error al cerrar caja'),
   });
 
-  const isOpen = currentRegister && !currentRegister.closedAt;
+  const movementMutation = useMutation({
+    mutationFn: () =>
+      api.post(`/cash-register/${currentRegister?.id}/movements`, {
+        type: movementType,
+        paymentMethod: movementMethod,
+        amount: Number(movementAmount || 0),
+        description: movementDescription,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cash-register-current'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-register-history'] });
+      queryClient.invalidateQueries({ queryKey: ['cash-register-summary'] });
+      setMovementAmount('');
+      setMovementDescription('');
+      toast.success('Movimiento de caja registrado');
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'Error al registrar movimiento'),
+  });
+
+  const isOpen = !!(currentRegister && !currentRegister.closedAt);
+  const expectedCash = Number(currentRegister?.expectedCash || 0);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Caja Registradora</h1>
-          <p className="mt-1 text-sm text-gray-500">Gestiona la apertura y cierre de caja</p>
+          <p className="mt-1 text-sm text-gray-500">Apertura, movimientos, arqueo y cierre por turno</p>
         </div>
         <span
           className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${
@@ -56,7 +94,6 @@ export default function CashRegisterPage() {
         </span>
       </div>
 
-      {/* Open / Close Cash Register */}
       {!isOpen ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
           <div className="mx-auto max-w-md text-center">
@@ -88,48 +125,99 @@ export default function CashRegisterPage() {
         </div>
       ) : (
         <>
-          {/* Current Session Stats */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              title="Monto Inicial"
-              value={`$${Number(currentRegister.initialCash || 0).toLocaleString('es-CL')}`}
-              icon={<ArrowDownCircle className="h-5 w-5" />}
-              tone="bg-blue-50 text-blue-700"
-            />
-            <StatCard
-              title="Ventas en Efectivo"
-              value={`$${Number(currentRegister.cashSales || 0).toLocaleString('es-CL')}`}
-              icon={<ArrowUpCircle className="h-5 w-5" />}
-              tone="bg-emerald-50 text-emerald-700"
-            />
-            <StatCard
-              title="Total Transacciones"
-              value={`${currentRegister.transactionCount || 0}`}
-              icon={<Banknote className="h-5 w-5" />}
-              tone="bg-purple-50 text-purple-700"
-            />
-            <StatCard
-              title="Efectivo Esperado"
-              value={`$${Number(
-                (Number(currentRegister.initialCash) || 0) +
-                  (Number(currentRegister.incomeTotal) || 0) -
-                  (Number(currentRegister.expenseTotal) || 0)
-              ).toLocaleString('es-CL')}`}
-              icon={<DollarSign className="h-5 w-5" />}
-              tone="bg-amber-50 text-amber-700"
-            />
+            <StatCard title="Monto Inicial" value={`$${Number(currentRegister.initialCash || 0).toLocaleString('es-CL')}`} icon={<ArrowDownCircle className="h-5 w-5" />} tone="bg-blue-50 text-blue-700" />
+            <StatCard title="Ingresos" value={`$${Number(currentRegister.incomeTotal || 0).toLocaleString('es-CL')}`} icon={<ArrowUpCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
+            <StatCard title="Egresos" value={`$${Number(currentRegister.expenseTotal || 0).toLocaleString('es-CL')}`} icon={<WalletCards className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
+            <StatCard title="Efectivo Esperado" value={`$${expectedCash.toLocaleString('es-CL')}`} icon={<DollarSign className="h-5 w-5" />} tone="bg-amber-50 text-amber-700" />
           </div>
 
-          {/* Transaction List */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="mb-3 text-lg font-bold text-slate-900">Registrar Movimiento de Caja</h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                <select
+                  value={movementType}
+                  onChange={(e) => setMovementType(e.target.value as 'INCOME' | 'EXPENSE')}
+                  className="rounded-lg border px-3 py-2"
+                >
+                  <option value="EXPENSE">Egreso</option>
+                  <option value="INCOME">Ingreso</option>
+                </select>
+                <select
+                  value={movementMethod}
+                  onChange={(e) => setMovementMethod(e.target.value)}
+                  className="rounded-lg border px-3 py-2"
+                >
+                  <option value="CASH">Efectivo</option>
+                  <option value="CARD">Tarjeta</option>
+                  <option value="TRANSFER">Transferencia</option>
+                  <option value="QR">QR</option>
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  value={movementAmount}
+                  onChange={(e) => setMovementAmount(e.target.value)}
+                  placeholder="Monto"
+                  className="rounded-lg border px-3 py-2"
+                />
+                <input
+                  value={movementDescription}
+                  onChange={(e) => setMovementDescription(e.target.value)}
+                  placeholder="Descripcion"
+                  className="rounded-lg border px-3 py-2"
+                />
+              </div>
+              <button
+                onClick={() => movementMutation.mutate()}
+                disabled={movementMutation.isPending || !movementAmount || !movementDescription}
+                className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {movementMutation.isPending ? 'Registrando...' : 'Guardar movimiento'}
+              </button>
+            </section>
+
+            <section className="rounded-2xl border border-red-100 bg-white p-6 shadow-sm">
+              <h2 className="mb-2 text-lg font-bold text-slate-900">Cerrar Caja</h2>
+              <p className="mb-4 text-sm text-slate-500">Cuenta el efectivo en caja e ingresa el monto final</p>
+              <div className="space-y-3">
+                <input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={finalCash}
+                  onChange={(e) => setFinalCash(e.target.value)}
+                  placeholder="Monto final"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg font-bold"
+                />
+                <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                  Diferencia estimada:{' '}
+                  <span
+                    className={`font-bold ${
+                      Number(finalCash || 0) - expectedCash >= 0 ? 'text-emerald-600' : 'text-red-600'
+                    }`}
+                  >
+                    ${(Number(finalCash || 0) - expectedCash).toLocaleString('es-CL')}
+                  </span>
+                </div>
+                <button
+                  onClick={() => closeMutation.mutate({ finalCash: Number(finalCash) || 0 })}
+                  disabled={closeMutation.isPending || !finalCash}
+                  className="w-full rounded-xl bg-red-600 px-8 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {closeMutation.isPending ? 'Cerrando...' : 'Cerrar Caja'}
+                </button>
+              </div>
+            </section>
+          </div>
+
           {currentRegister.transactions?.length > 0 && (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-900">Movimientos de Caja</h2>
+              <h2 className="mb-4 text-lg font-bold text-slate-900">Movimientos del Turno Actual</h2>
               <div className="space-y-2">
-                {currentRegister.transactions.map((tx: any) => (
-                  <div
-                    key={tx.id}
-                    className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-4"
-                  >
+                {currentRegister.transactions.slice(0, 20).map((tx: any) => (
+                  <div key={tx.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 p-4">
                     <div className="flex items-center gap-3">
                       {tx.type === 'INCOME' ? (
                         <ArrowUpCircle className="h-5 w-5 text-emerald-500" />
@@ -138,14 +226,10 @@ export default function CashRegisterPage() {
                       )}
                       <div>
                         <p className="font-medium text-slate-900">{tx.description || tx.type}</p>
-                        <p className="text-xs text-slate-500">
-                          {new Date(tx.createdAt).toLocaleString('es-CL')}
-                        </p>
+                        <p className="text-xs text-slate-500">{new Date(tx.createdAt).toLocaleString('es-CL')}</p>
                       </div>
                     </div>
-                    <span
-                      className={`font-bold ${tx.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}
-                    >
+                    <span className={`font-bold ${tx.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
                       {tx.type === 'INCOME' ? '+' : '-'}${Number(tx.amount).toLocaleString('es-CL')}
                     </span>
                   </div>
@@ -153,60 +237,73 @@ export default function CashRegisterPage() {
               </div>
             </div>
           )}
-
-          {/* Close Register */}
-          <div className="rounded-2xl border border-red-100 bg-white p-6 shadow-sm">
-            <h2 className="mb-2 text-lg font-bold text-slate-900">Cerrar Caja</h2>
-            <p className="mb-4 text-sm text-slate-500">Cuenta el efectivo en caja e ingresa el monto final</p>
-            <div className="flex items-end gap-4">
-              <div className="flex-1">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Monto Final ($)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="100"
-                  value={finalCash}
-                  onChange={(e) => setFinalCash(e.target.value)}
-                  placeholder="0"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg font-bold focus:border-red-400 focus:outline-none focus:ring-2 focus:ring-red-100"
-                />
-              </div>
-              <button
-                onClick={() => closeMutation.mutate({ finalCash: Number(finalCash) || 0 })}
-                disabled={closeMutation.isPending || !finalCash}
-                className="rounded-xl bg-red-600 px-8 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
-              >
-                {closeMutation.isPending ? 'Cerrando...' : 'Cerrar Caja'}
-              </button>
-            </div>
-            {finalCash && (
-              <div className="mt-4 rounded-xl bg-slate-50 p-4">
-                <p className="text-sm text-slate-600">
-                  Diferencia:{' '}
-                  <span
-                    className={`font-bold ${
-                      Number(finalCash) -
-                        ((Number(currentRegister.initialCash) || 0) +
-                          (Number(currentRegister.incomeTotal) || 0) -
-                          (Number(currentRegister.expenseTotal) || 0)) >=
-                      0
-                        ? 'text-emerald-600'
-                        : 'text-red-600'
-                    }`}
-                  >
-                    $
-                    {(
-                      Number(finalCash) -
-                      ((Number(currentRegister.initialCash) || 0) +
-                        (Number(currentRegister.incomeTotal) || 0) -
-                        (Number(currentRegister.expenseTotal) || 0))
-                    ).toLocaleString('es-CL')}
-                  </span>
-                </p>
-              </div>
-            )}
-          </div>
         </>
+      )}
+
+      {registerSummary?.salesByCashier?.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-bold text-slate-900">Resumen de Turnos por Cajero</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b text-sm text-slate-500">
+                  <th className="pb-3 pr-4">Cajero</th>
+                  <th className="pb-3 pr-4">Turnos</th>
+                  <th className="pb-3 pr-4">Ingresos</th>
+                  <th className="pb-3 pr-4">Egresos</th>
+                  <th className="pb-3 pr-4">Diferencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registerSummary.salesByCashier.map((item: any) => (
+                  <tr key={item.userId} className="border-b">
+                    <td className="py-3 pr-4 font-medium">{item.name}</td>
+                    <td className="py-3 pr-4">{item.shifts}</td>
+                    <td className="py-3 pr-4">${Number(item.sales).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(item.expenses).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(item.difference).toLocaleString('es-CL')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {registerHistory?.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-bold text-slate-900">Historial de Aperturas/Cierres</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b text-sm text-slate-500">
+                  <th className="pb-3 pr-4">Turno</th>
+                  <th className="pb-3 pr-4">Cajero</th>
+                  <th className="pb-3 pr-4">Apertura</th>
+                  <th className="pb-3 pr-4">Cierre</th>
+                  <th className="pb-3 pr-4">Estado</th>
+                  <th className="pb-3 pr-4">Diferencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registerHistory.slice(0, 20).map((register: any) => (
+                  <tr key={register.id} className="border-b">
+                    <td className="py-3 pr-4 font-medium">{register.id.slice(0, 8)}</td>
+                    <td className="py-3 pr-4">{register.user ? `${register.user.firstName} ${register.user.lastName}` : '-'}</td>
+                    <td className="py-3 pr-4">{new Date(register.openedAt).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">{register.closedAt ? new Date(register.closedAt).toLocaleString('es-CL') : '-'}</td>
+                    <td className="py-3 pr-4">
+                      <span className={`rounded-full px-2 py-1 text-xs ${register.status === 'OPEN' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
+                        {register.status}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">${Number(register.difference || 0).toLocaleString('es-CL')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {isLoading && (
@@ -226,7 +323,7 @@ function StatCard({
 }: {
   title: string;
   value: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   tone: string;
 }) {
   return (
@@ -241,3 +338,6 @@ function StatCard({
     </article>
   );
 }
+
+
+

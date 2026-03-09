@@ -1,4 +1,4 @@
-import {
+﻿import {
   ModuleType,
   UserRole,
   PaymentMethod,
@@ -179,6 +179,10 @@ export interface ISaleItem {
 export interface ISaleCreate {
   customerId?: string;
   paymentMethod: PaymentMethod;
+  payments?: Array<{
+    paymentMethod: PaymentMethod;
+    amount: number;
+  }>;
   items: {
     productId: string;
     quantity: number;
@@ -191,6 +195,10 @@ export interface ISaleCreate {
   tableId?: string;
   orderId?: string;
   ageVerified?: boolean;
+  promotionId?: string;
+  campaignTag?: string;
+  packName?: string;
+  inputMethod?: InputMethod | string;
 }
 
 // Stock Movement Types
@@ -373,3 +381,5 @@ export interface IReport {
   data: Record<string, any>;
   generatedAt: Date;
 }
+
+
