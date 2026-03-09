@@ -5,13 +5,22 @@ import { usePathname } from 'next/navigation';
 import {
   BarChart3,
   Bot,
+  Banknote,
+  Clock,
+  FileText,
+  Gift,
   LayoutDashboard,
   Package,
+  Repeat,
   Settings,
+  Shield,
   ShoppingCart,
+  Star,
   Store,
+  Truck,
   UtensilsCrossed,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
@@ -19,16 +28,27 @@ import { MODULE_NAME_MAP } from '@/lib/modules';
 
 type ModuleKey = 'RESTAURANT' | 'MINIMARKET' | 'BOTILLERIA' | 'BOOKSTORE' | 'ALL';
 
+const ALL_MODULES = ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'];
+
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
-  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
-  { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
-  { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
-  { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
-  { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
-  { name: 'Asistente IA', href: '/dashboard/ai', icon: Bot, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ALL_MODULES },
+  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES },
+  { name: 'Caja', href: '/dashboard/cash-register', icon: Banknote, modules: ALL_MODULES },
+  { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ALL_MODULES },
+  { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ALL_MODULES },
+  { name: 'Transferencias', href: '/dashboard/transfers', icon: Repeat, modules: ALL_MODULES },
+  { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ALL_MODULES },
+  { name: 'Fidelizacion', href: '/dashboard/loyalty', icon: Star, modules: ALL_MODULES },
+  { name: 'Empleados', href: '/dashboard/employees', icon: Clock, modules: ALL_MODULES },
+  { name: 'Promociones', href: '/dashboard/promotions', icon: Gift, modules: ALL_MODULES },
+  { name: 'Facturacion', href: '/dashboard/invoices', icon: FileText, modules: ALL_MODULES },
+  { name: 'Delivery', href: '/dashboard/delivery', icon: Truck, modules: ['ALL', 'RESTAURANT', 'MINIMARKET'] },
+  { name: 'Apartados', href: '/dashboard/layaway', icon: Wallet, modules: ALL_MODULES },
+  { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, modules: ALL_MODULES },
+  { name: 'Asistente IA', href: '/dashboard/ai', icon: Bot, modules: ALL_MODULES },
+  { name: 'Alertas Fraude', href: '/dashboard/fraud', icon: Shield, modules: ALL_MODULES },
   { name: 'Restaurante', href: '/dashboard/restaurant', icon: UtensilsCrossed, modules: ['ALL', 'RESTAURANT'] },
-  { name: 'Configuracion', href: '/dashboard/settings', icon: Settings, modules: ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'] },
+  { name: 'Configuracion', href: '/dashboard/settings', icon: Settings, modules: ALL_MODULES },
 ];
 
 export function Sidebar() {
@@ -47,7 +67,7 @@ export function Sidebar() {
         <p className="mt-1 text-xs text-slate-400">Modulo activo: {moduleLabel}</p>
       </div>
 
-      <nav className="flex-1 space-y-1 px-4 py-4">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-4 py-4">
         {filteredNav.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -55,7 +75,7 @@ export function Sidebar() {
               key={item.name}
               href={item.href}
               className={cn(
-                'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition',
+                'group flex items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition',
                 isActive
                   ? 'bg-indigo-500/20 text-white'
                   : 'text-slate-300 hover:bg-slate-800 hover:text-white'

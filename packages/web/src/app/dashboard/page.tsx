@@ -3,7 +3,23 @@
 import Link from 'next/link';
 import { useMemo, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, ArrowRight, DollarSign, Package, ShoppingCart, Sparkles } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Banknote,
+  Clock,
+  DollarSign,
+  Gift,
+  Package,
+  Repeat,
+  Shield,
+  ShoppingCart,
+  Sparkles,
+  Star,
+  Truck,
+  Users,
+  Wallet,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 import { MODULES } from '@/lib/modules';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
@@ -17,6 +33,7 @@ const MODULE_WIDGETS: Record<
     description: 'Controla mesas activas, tiempos de servicio y rotacion de turnos.',
     links: [
       { label: 'Ver mesas y ordenes', href: '/dashboard/restaurant' },
+      { label: 'Delivery', href: '/dashboard/delivery' },
       { label: 'Registrar nueva venta', href: '/dashboard/sales' },
     ],
   },
@@ -25,6 +42,7 @@ const MODULE_WIDGETS: Record<
     description: 'Monitorea productos criticos, ventas por horario y reposicion sugerida.',
     links: [
       { label: 'Revisar inventario', href: '/dashboard/inventory' },
+      { label: 'Transferencias', href: '/dashboard/transfers' },
       { label: 'Gestionar productos', href: '/dashboard/products' },
     ],
   },
@@ -33,7 +51,8 @@ const MODULE_WIDGETS: Record<
     description: 'Prioriza mix de vinos/destilados y controla stock de alta rotacion.',
     links: [
       { label: 'Gestionar productos', href: '/dashboard/products' },
-      { label: 'Ver reportes comerciales', href: '/dashboard/reports' },
+      { label: 'Promociones', href: '/dashboard/promotions' },
+      { label: 'Ver reportes', href: '/dashboard/reports' },
     ],
   },
   BOOKSTORE: {
@@ -41,6 +60,7 @@ const MODULE_WIDGETS: Record<
     description: 'Sigue el rendimiento por categorias, packs y productos de temporada.',
     links: [
       { label: 'Gestionar catalogo', href: '/dashboard/products' },
+      { label: 'Apartados', href: '/dashboard/layaway' },
       { label: 'Ver clientes', href: '/dashboard/customers' },
     ],
   },
@@ -67,11 +87,28 @@ export default function DashboardPage() {
     queryFn: () => api.get('/products/expiring').then((res) => res.data),
   });
 
+  const { data: cashRegister } = useQuery({
+    queryKey: ['cash-register-current'],
+    queryFn: () => api.get('/cash-register/current').then((res) => res.data).catch(() => null),
+  });
+
+  const { data: promotions } = useQuery({
+    queryKey: ['promotions-active'],
+    queryFn: () => api.get('/promotions/active').then((res) => res.data).catch(() => []),
+  });
+
+  const { data: customers } = useQuery({
+    queryKey: ['customers'],
+    queryFn: () => api.get('/customers').then((res) => res.data).catch(() => []),
+  });
+
   const revenue = useMemo(() => Number(dailySales?.totalSales || 0), [dailySales?.totalSales]);
   const topSales = useMemo(() => (dailySales?.sales || []).slice(0, 6), [dailySales?.sales]);
+  const isRegisterOpen = cashRegister && !cashRegister.closedAt;
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -89,6 +126,7 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Main KPI Cards */}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Ventas del dia"
@@ -120,6 +158,48 @@ export default function DashboardPage() {
         />
       </section>
 
+      {/* Secondary Stats Row */}
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MiniCard
+          icon={<Banknote className="h-4 w-4" />}
+          label="Estado Caja"
+          value={isRegisterOpen ? 'Abierta' : 'Cerrada'}
+          color={isRegisterOpen ? 'text-emerald-600' : 'text-red-600'}
+          href="/dashboard/cash-register"
+        />
+        <MiniCard
+          icon={<Gift className="h-4 w-4" />}
+          label="Promociones Activas"
+          value={`${promotions?.length || 0}`}
+          href="/dashboard/promotions"
+        />
+        <MiniCard
+          icon={<Users className="h-4 w-4" />}
+          label="Clientes Registrados"
+          value={`${customers?.length || 0}`}
+          href="/dashboard/customers"
+        />
+        <MiniCard
+          icon={<Star className="h-4 w-4" />}
+          label="Fidelizacion"
+          value="Ver puntos"
+          href="/dashboard/loyalty"
+        />
+      </section>
+
+      {/* Quick Access Grid */}
+      <section className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
+        <QuickLink href="/dashboard/cash-register" icon={<Banknote className="h-5 w-5" />} label="Caja" color="bg-emerald-50 text-emerald-700" />
+        <QuickLink href="/dashboard/employees" icon={<Clock className="h-5 w-5" />} label="Empleados" color="bg-blue-50 text-blue-700" />
+        <QuickLink href="/dashboard/transfers" icon={<Repeat className="h-5 w-5" />} label="Transferencias" color="bg-indigo-50 text-indigo-700" />
+        <QuickLink href="/dashboard/invoices" icon={<DollarSign className="h-5 w-5" />} label="Facturacion" color="bg-purple-50 text-purple-700" />
+        <QuickLink href="/dashboard/delivery" icon={<Truck className="h-5 w-5" />} label="Delivery" color="bg-orange-50 text-orange-700" />
+        <QuickLink href="/dashboard/layaway" icon={<Wallet className="h-5 w-5" />} label="Apartados" color="bg-pink-50 text-pink-700" />
+        <QuickLink href="/dashboard/fraud" icon={<Shield className="h-5 w-5" />} label="Alertas Fraude" color="bg-red-50 text-red-700" />
+        <QuickLink href="/dashboard/ai" icon={<Sparkles className="h-5 w-5" />} label="IA Avanzada" color="bg-violet-50 text-violet-700" />
+      </section>
+
+      {/* Module Widget */}
       {moduleWidget && (
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Foco del modulo</p>
@@ -140,6 +220,7 @@ export default function DashboardPage() {
         </section>
       )}
 
+      {/* Recent Sales */}
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-900">Ventas recientes</h2>
@@ -192,5 +273,55 @@ function StatCard({
         <div className={`rounded-xl p-2.5 ${tone}`}>{icon}</div>
       </div>
     </article>
+  );
+}
+
+function MiniCard({
+  icon,
+  label,
+  value,
+  color,
+  href,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  color?: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-200 hover:shadow-md"
+    >
+      <div className="rounded-lg bg-slate-100 p-2 text-slate-600">{icon}</div>
+      <div>
+        <p className="text-xs text-slate-500">{label}</p>
+        <p className={`font-bold ${color || 'text-slate-900'}`}>{value}</p>
+      </div>
+    </Link>
+  );
+}
+
+function QuickLink({
+  href,
+  icon,
+  label,
+  color,
+}: {
+  href: string;
+  icon: ReactNode;
+  label: string;
+  color: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-indigo-200 hover:shadow-md"
+    >
+      <div className={`rounded-xl p-2.5 ${color}`}>{icon}</div>
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <ArrowRight className="ml-auto h-4 w-4 text-slate-400" />
+    </Link>
   );
 }
