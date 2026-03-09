@@ -76,6 +76,8 @@ export default function RestaurantPage() {
   const [tipSuggestionPercentInput, setTipSuggestionPercentInput] = useState('10');
   const [tipAmount, setTipAmount] = useState('0');
   const [seenServiceRequests, setSeenServiceRequests] = useState<string[]>([]);
+  const [customerPreviewTableId, setCustomerPreviewTableId] = useState('');
+  const [customerPreviewReloadKey, setCustomerPreviewReloadKey] = useState(0);
   const [reservationForm, setReservationForm] = useState<ReservationForm>({
     customerName: '',
     customerPhone: '',
@@ -157,6 +159,13 @@ export default function RestaurantPage() {
       }
     }
   }, [tables, selectedTableId]);
+
+  useEffect(() => {
+    if (!customerPreviewTableId && tables?.length) {
+      const preferred = tables.find((t: any) => t.currentOrder?.id) || tables[0];
+      setCustomerPreviewTableId(preferred.id);
+    }
+  }, [tables, customerPreviewTableId]);
 
   useEffect(() => {
     const percent = Number(dashboard?.settings?.tipSuggestionPercent);
@@ -445,6 +454,12 @@ export default function RestaurantPage() {
     () => (tables || []).find((table: any) => table.id === selectedTableId),
     [tables, selectedTableId],
   );
+
+  const customerPreviewTable = useMemo(
+    () => (tables || []).find((table: any) => table.id === customerPreviewTableId),
+    [tables, customerPreviewTableId],
+  );
+  const customerPreviewUrl = customerPreviewTable?.qrToken ? `/cliente/${customerPreviewTable.qrToken}` : '';
 
   const waiterOptions = useMemo(
     () =>
@@ -1332,17 +1347,74 @@ export default function RestaurantPage() {
             </div>
           )}
 
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-indigo-700">Links QR por mesa</h3>
-            <p className="mt-1 text-xs text-indigo-700">
-              Entrega este enlace como QR al cliente para que vea carta, estado y llame al garzon.
-            </p>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
-              {(tables || []).map((table: any) => (
-                <div key={table.id} className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs text-slate-700">
-                  Mesa {table.number}: <span className="font-mono">/cliente/{table.qrToken}</span>
+          <div className="grid gap-4 xl:grid-cols-[1fr_1.35fr]">
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-indigo-700">Links QR por mesa</h3>
+              <p className="mt-1 text-xs text-indigo-700">
+                Entrega este enlace como QR al cliente para que vea carta, estado y llame al garzon.
+              </p>
+              <div className="mt-3 grid gap-2">
+                {(tables || []).map((table: any) => (
+                  <button
+                    key={table.id}
+                    onClick={() => setCustomerPreviewTableId(table.id)}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs ${
+                      customerPreviewTableId === table.id
+                        ? 'border-indigo-400 bg-indigo-100 text-indigo-900'
+                        : 'border-indigo-200 bg-white text-slate-700 hover:bg-indigo-100/60'
+                    }`}
+                  >
+                    Mesa {table.number}: <span className="font-mono">/cliente/{table.qrToken}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">Vista perfil cliente</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Simula la experiencia cliente con controles de consulta, solicitud de cuenta y estado del pedido.
+                  </p>
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCustomerPreviewReloadKey((prev) => prev + 1)}
+                    disabled={!customerPreviewUrl}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Recargar vista
+                  </button>
+                  <Link
+                    href={customerPreviewUrl || '#'}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                      customerPreviewUrl
+                        ? 'bg-slate-900 text-white hover:bg-slate-800'
+                        : 'pointer-events-none bg-slate-200 text-slate-500'
+                    }`}
+                  >
+                    Abrir en pestaña
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
+                {customerPreviewUrl ? (
+                  <iframe
+                    key={`${customerPreviewUrl}-${customerPreviewReloadKey}`}
+                    src={customerPreviewUrl}
+                    title="Preview cliente QR"
+                    className="h-[640px] w-full bg-white"
+                  />
+                ) : (
+                  <div className="flex h-[320px] items-center justify-center bg-slate-50 text-sm text-slate-500">
+                    Selecciona una mesa para previsualizar el perfil cliente.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
