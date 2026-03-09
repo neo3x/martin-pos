@@ -8,6 +8,7 @@ import { useAuthStore, type BusinessModule } from '@/store/auth';
 import { MODULES } from '@/lib/modules';
 import toast from 'react-hot-toast';
 import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
+import { resolveRoleLandingPath } from '@/lib/role-access';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -57,8 +58,10 @@ export default function RegisterPage() {
         ...form,
         moduleType,
       });
+      const authState = useAuthStore.getState();
+      const landingPath = resolveRoleLandingPath(authState.user?.role, authState.activeModule || authState.user?.moduleType);
       toast.success('Cuenta creada correctamente');
-      router.push('/dashboard');
+      router.push(landingPath);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'No fue posible crear la cuenta');
     } finally {

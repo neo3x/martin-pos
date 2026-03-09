@@ -20,6 +20,12 @@ export class SalesService {
     private productsService: ProductsService
   ) {}
 
+  private readonly selfScopeRoles = ['CASHIER', 'SELLER', 'WAITER', 'STOCKER', 'KITCHEN', 'VIEWER'];
+
+  private shouldUseSelfScope(role?: string) {
+    return this.selfScopeRoles.includes(String(role || '').toUpperCase());
+  }
+
   async create(data: ISaleCreate, userId: string, branchId: string) {
     // Generate sale number before transaction
     const lastSale = await this.prisma.sale.findFirst({
@@ -206,6 +212,7 @@ export class SalesService {
               cashRegisterId: openRegister.id,
               userId,
               type: 'INCOME',
+              category: 'SALE',
               amount: payment.amount,
               paymentMethod: payment.paymentMethod as any,
               description: `Venta ${sale.saleNumber}`,
@@ -228,11 +235,19 @@ export class SalesService {
     return sale;
   }
 
-  async findAll(branchId: string, filters?: any) {
+  async findAll(
+    branchId: string,
+    filters?: any,
+    actor?: { userId: string; role: string },
+  ) {
     const where: any = {
       branchId,
       deletedAt: null,
     };
+
+    if (this.shouldUseSelfScope(actor?.role)) {
+      where.userId = actor?.userId;
+    }
 
     if (filters?.dateFrom && filters?.dateTo) {
       where.createdAt = {
@@ -268,9 +283,21 @@ export class SalesService {
     });
   }
 
-  async findOne(id: string) {
-    const sale = await this.prisma.sale.findUnique({
-      where: { id },
+  async findOne(
+    id: string,
+    branchId?: string,
+    actor?: { userId: string; role: string },
+  ) {
+    const where: any = { id, deletedAt: null };
+    if (branchId) {
+      where.branchId = branchId;
+    }
+    if (this.shouldUseSelfScope(actor?.role)) {
+      where.userId = actor?.userId;
+    }
+
+    const sale = await this.prisma.sale.findFirst({
+      where,
       include: {
         items: {
           include: {
@@ -292,15 +319,20 @@ export class SalesService {
       },
     });
 
-    if (!sale || sale.deletedAt) {
+    if (!sale) {
       throw new NotFoundException('Sale not found');
     }
 
     return sale;
   }
 
-  async cancelSale(id: string, userId: string) {
-    const sale = await this.findOne(id);
+  async cancelSale(
+    id: string,
+    userId: string,
+    branchId: string,
+    actor?: { userId: string; role: string },
+  ) {
+    const sale = await this.findOne(id, branchId, actor);
 
     if (sale.status === SaleStatus.CANCELLED) {
       throw new BadRequestException('Sale already cancelled');
@@ -352,7 +384,11 @@ export class SalesService {
     });
   }
 
-  async getDailySales(branchId: string, date?: Date) {
+  async getDailySales(
+    branchId: string,
+    date?: Date,
+    actor?: { userId: string; role: string },
+  ) {
     const targetDate = date || new Date();
     const startOfDay = new Date(targetDate.setHours(0, 0, 0, 0));
     const endOfDay = new Date(targetDate.setHours(23, 59, 59, 999));
@@ -361,6 +397,7 @@ export class SalesService {
       where: {
         branchId,
         status: SaleStatus.COMPLETED,
+        ...(this.shouldUseSelfScope(actor?.role) ? { userId: actor?.userId } : {}),
         createdAt: {
           gte: startOfDay,
           lte: endOfDay,

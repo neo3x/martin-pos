@@ -11,6 +11,12 @@ import { OrderStatus, ReservationStatus } from '@prisma/client';
 
 const ACTIVE_ORDER_STATUSES: OrderStatus[] = ['PENDING', 'PREPARING', 'READY'];
 const CASHIER_ALLOWED_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'];
+const WAITER_ROLE = 'WAITER';
+
+type RestaurantActor = {
+  userId: string;
+  role: string;
+};
 
 @Injectable()
 export class RestaurantService {
@@ -18,6 +24,10 @@ export class RestaurantService {
     private prisma: PrismaService,
     private salesService: SalesService
   ) {}
+
+  private isWaiterActor(actor?: RestaurantActor | null) {
+    return actor?.role === WAITER_ROLE;
+  }
 
   private async getBranchTaxRate(branchId: string) {
     const branch = await this.prisma.branch.findUnique({
@@ -81,9 +91,14 @@ export class RestaurantService {
     return table;
   }
 
-  private async ensureOrder(orderId: string, branchId: string) {
+  private async ensureOrder(orderId: string, branchId: string, actor?: RestaurantActor) {
+    const where: any = { id: orderId, branchId, deletedAt: null };
+    if (this.isWaiterActor(actor)) {
+      where.waiterId = actor?.userId;
+    }
+
     const order = await this.prisma.order.findFirst({
-      where: { id: orderId, branchId, deletedAt: null },
+      where,
       include: {
         table: true,
         waiter: {
@@ -199,18 +214,37 @@ export class RestaurantService {
     }
   }
 
-  async getTables(branchId: string, filters?: { sector?: string }) {
+  async getTables(branchId: string, filters?: { sector?: string }, actor?: RestaurantActor) {
+    const isWaiter = this.isWaiterActor(actor);
+    const tableWhere: any = {
+      branchId,
+      deletedAt: null,
+      ...(filters?.sector ? { sector: filters.sector } : {}),
+    };
+
+    if (isWaiter) {
+      tableWhere.OR = [
+        { status: { in: ['AVAILABLE', 'RESERVED'] } },
+        {
+          orders: {
+            some: {
+              deletedAt: null,
+              status: { in: ACTIVE_ORDER_STATUSES },
+              waiterId: actor?.userId,
+            },
+          },
+        },
+      ];
+    }
+
     const tables: any[] = await this.prisma.table.findMany({
-      where: {
-        branchId,
-        deletedAt: null,
-        ...(filters?.sector ? { sector: filters.sector } : {}),
-      },
+      where: tableWhere,
       include: {
         orders: {
           where: {
             status: { in: ACTIVE_ORDER_STATUSES },
             deletedAt: null,
+            ...(isWaiter ? { waiterId: actor?.userId } : {}),
           },
           include: {
             waiter: {
@@ -1025,8 +1059,12 @@ export class RestaurantService {
     return this.getOrderAccount(order.id, branchId);
   }
 
-  async getOrders(branchId: string, status?: string) {
+  async getOrders(branchId: string, status?: string, actor?: RestaurantActor) {
     const where: any = { branchId, deletedAt: null };
+
+    if (this.isWaiterActor(actor)) {
+      where.waiterId = actor?.userId;
+    }
 
     if (status === 'active') {
       where.status = { in: ACTIVE_ORDER_STATUSES };
@@ -1058,7 +1096,7 @@ export class RestaurantService {
 
     return Promise.all(
       orders.map(async (order) => {
-        const account = await this.getOrderAccount(order.id, branchId);
+        const account = await this.getOrderAccount(order.id, branchId, actor);
         return {
           ...order,
           account,
@@ -1067,8 +1105,12 @@ export class RestaurantService {
     );
   }
 
-  async getOrdersBoard(branchId: string, status?: string) {
+  async getOrdersBoard(branchId: string, status?: string, actor?: RestaurantActor) {
     const where: any = { branchId, deletedAt: null };
+
+    if (this.isWaiterActor(actor)) {
+      where.waiterId = actor?.userId;
+    }
 
     if (status === 'active') {
       where.status = { in: ACTIVE_ORDER_STATUSES };
@@ -1174,9 +1216,10 @@ export class RestaurantService {
     branchId: string,
     payload: {
       items: Array<{ productId: string; quantity: number; notes?: string }>;
-    }
+    },
+    actor?: RestaurantActor,
   ) {
-    const order = await this.ensureOrder(orderId, branchId);
+    const order = await this.ensureOrder(orderId, branchId, actor);
 
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
       throw new BadRequestException('No se puede editar un pedido cerrado o cancelado');
@@ -1239,7 +1282,7 @@ export class RestaurantService {
       });
     });
 
-    return this.getOrderAccount(order.id, branchId);
+    return this.getOrderAccount(order.id, branchId, actor);
   }
 
   async sendOrder(
@@ -1247,8 +1290,9 @@ export class RestaurantService {
     branchId: string,
     sentById: string,
     targets?: Array<'KITCHEN' | 'CASHIER'>,
+    actor?: RestaurantActor,
   ) {
-    const order = await this.ensureOrder(orderId, branchId);
+    const order = await this.ensureOrder(orderId, branchId, actor);
 
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
       throw new BadRequestException('No se puede enviar un pedido cerrado o cancelado');
@@ -1293,7 +1337,7 @@ export class RestaurantService {
       });
     });
 
-    const account = await this.getOrderAccount(order.id, branchId);
+    const account = await this.getOrderAccount(order.id, branchId, actor);
 
     return {
       account,
@@ -1317,9 +1361,10 @@ export class RestaurantService {
       quantity?: number;
       notes?: string;
       status?: string;
-    }
+    },
+    actor?: RestaurantActor,
   ) {
-    const order = await this.ensureOrder(orderId, branchId);
+    const order = await this.ensureOrder(orderId, branchId, actor);
 
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
       throw new BadRequestException('No se puede editar un pedido cerrado o cancelado');
@@ -1344,11 +1389,11 @@ export class RestaurantService {
       },
     });
 
-    return this.getOrderAccount(orderId, branchId);
+    return this.getOrderAccount(orderId, branchId, actor);
   }
 
-  async removeOrderItem(orderId: string, itemId: string, branchId: string) {
-    const order = await this.ensureOrder(orderId, branchId);
+  async removeOrderItem(orderId: string, itemId: string, branchId: string, actor?: RestaurantActor) {
+    const order = await this.ensureOrder(orderId, branchId, actor);
 
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
       throw new BadRequestException('No se puede editar un pedido cerrado o cancelado');
@@ -1365,11 +1410,15 @@ export class RestaurantService {
 
     await this.prisma.orderItem.delete({ where: { id: item.id } });
 
-    return this.getOrderAccount(orderId, branchId);
+    return this.getOrderAccount(orderId, branchId, actor);
   }
 
-  async assignWaiter(orderId: string, branchId: string, waiterId: string) {
-    await this.ensureOrder(orderId, branchId);
+  async assignWaiter(orderId: string, branchId: string, waiterId: string, actor?: RestaurantActor) {
+    const order = await this.ensureOrder(orderId, branchId, actor);
+
+    if (this.isWaiterActor(actor) && waiterId !== actor?.userId) {
+      throw new ForbiddenException('Garzon solo puede autoasignarse pedidos');
+    }
 
     const waiter = await this.prisma.user.findFirst({
       where: {
@@ -1385,19 +1434,19 @@ export class RestaurantService {
     }
 
     await this.prisma.order.update({
-      where: { id: orderId },
+      where: { id: order.id },
       data: { waiterId },
     });
 
-    return this.getOrderAccount(orderId, branchId);
+    return this.getOrderAccount(orderId, branchId, actor);
   }
 
-  async updateDiners(orderId: string, branchId: string, diners: number) {
+  async updateDiners(orderId: string, branchId: string, diners: number, actor?: RestaurantActor) {
     if (diners < 1) {
       throw new BadRequestException('La cantidad de comensales debe ser mayor a 0');
     }
 
-    const order = await this.ensureOrder(orderId, branchId);
+    const order = await this.ensureOrder(orderId, branchId, actor);
 
     await this.prisma.$transaction([
       this.prisma.order.update({
@@ -1410,15 +1459,15 @@ export class RestaurantService {
       }),
     ]);
 
-    return this.getOrderAccount(orderId, branchId);
+    return this.getOrderAccount(orderId, branchId, actor);
   }
 
-  async splitPreview(orderId: string, branchId: string, parts: number) {
+  async splitPreview(orderId: string, branchId: string, parts: number, actor?: RestaurantActor) {
     if (!Number.isInteger(parts) || parts < 2) {
       throw new BadRequestException('La divisiÃ³n debe ser en 2 o mÃ¡s partes');
     }
 
-    const account = await this.getOrderAccount(orderId, branchId);
+    const account = await this.getOrderAccount(orderId, branchId, actor);
     const total = Math.round(Number(account.totals.remainingTotal));
 
     if (total <= 0) {
@@ -1543,27 +1592,18 @@ export class RestaurantService {
 
     if (tipAmount > 0) {
       const tipPaymentMethod = payload.tipPaymentMethod || payload.paymentMethod;
-      await this.prisma.$transaction([
-        this.prisma.cashTransaction.create({
-          data: {
-            cashRegisterId: openRegister.id,
-            userId: cashier.id,
-            type: 'INCOME',
-            amount: tipAmount,
-            paymentMethod: tipPaymentMethod as any,
-            description: `Propina sugerida - Pedido ${order.orderNumber}`,
-            saleId: sale.id,
-          },
-        }),
-        this.prisma.cashRegister.update({
-          where: { id: openRegister.id },
-          data: {
-            totalSales: {
-              increment: tipAmount,
-            },
-          },
-        }),
-      ]);
+      await this.prisma.cashTransaction.create({
+        data: {
+          cashRegisterId: openRegister.id,
+          userId: cashier.id,
+          type: 'INCOME',
+          category: 'TIP',
+          amount: tipAmount,
+          paymentMethod: tipPaymentMethod as any,
+          description: `Propina sugerida - Pedido ${order.orderNumber}`,
+          saleId: sale.id,
+        },
+      });
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -1617,9 +1657,13 @@ export class RestaurantService {
     };
   }
 
-  async closeAccount(orderId: string, branchId: string) {
-    const order = await this.ensureOrder(orderId, branchId);
-    const account = await this.getOrderAccount(order.id, branchId);
+  async closeAccount(orderId: string, branchId: string, actor?: RestaurantActor) {
+    if (actor) {
+      this.ensureCashierRole(actor.role);
+    }
+
+    const order = await this.ensureOrder(orderId, branchId, actor);
+    const account = await this.getOrderAccount(order.id, branchId, actor);
 
     if (Number(account.totals.remainingTotal) > 0) {
       throw new BadRequestException('No se puede cerrar la cuenta, aÃºn hay saldo pendiente');
@@ -1643,7 +1687,7 @@ export class RestaurantService {
       }),
     ]);
 
-    return this.getOrderAccount(order.id, branchId);
+    return this.getOrderAccount(order.id, branchId, actor);
   }
 
   async releaseTable(tableId: string, branchId: string) {
@@ -1679,11 +1723,14 @@ export class RestaurantService {
     });
   }
 
-  async updateOrderStatus(orderId: string, branchId: string, status: string) {
-    const order = await this.ensureOrder(orderId, branchId);
+  async updateOrderStatus(orderId: string, branchId: string, status: string, actor?: RestaurantActor) {
+    if (this.isWaiterActor(actor) && ['SERVED', 'CANCELLED'].includes(status)) {
+      throw new ForbiddenException('Garzon no puede cerrar o cancelar pedidos');
+    }
+    const order = await this.ensureOrder(orderId, branchId, actor);
 
     if (status === 'SERVED') {
-      const account = await this.getOrderAccount(orderId, branchId);
+      const account = await this.getOrderAccount(orderId, branchId, actor);
       if (Number(account.totals.remainingTotal) > 0) {
         throw new BadRequestException('No se puede marcar como SERVED con saldo pendiente');
       }
@@ -1698,15 +1745,34 @@ export class RestaurantService {
       },
     });
 
-    return this.getOrderAccount(order.id, branchId);
+    return this.getOrderAccount(order.id, branchId, actor);
   }
 
   async getServiceRequests(
     branchId: string,
     status?: 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
+    actor?: RestaurantActor,
   ) {
     const where: any = { branchId };
     if (status) where.status = status;
+    if (this.isWaiterActor(actor)) {
+      where.OR = [
+        { order: { waiterId: actor?.userId } },
+        {
+          orderId: null,
+          table: {
+            orders: {
+              some: {
+                branchId,
+                deletedAt: null,
+                waiterId: actor?.userId,
+                status: { in: ACTIVE_ORDER_STATUSES },
+              },
+            },
+          },
+        },
+      ];
+    }
 
     return this.prisma.tableServiceRequest.findMany({
       where,
@@ -1731,20 +1797,49 @@ export class RestaurantService {
     branchId: string,
     userId: string,
     status: 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
+    actor?: RestaurantActor,
   ) {
     const request = await this.prisma.tableServiceRequest.findFirst({
       where: { id: requestId, branchId },
-      select: { id: true, status: true },
+      include: {
+        order: {
+          select: { id: true, waiterId: true },
+        },
+        table: {
+          select: {
+            id: true,
+            orders: {
+              where: {
+                branchId,
+                deletedAt: null,
+                status: { in: ACTIVE_ORDER_STATUSES },
+              },
+              select: { id: true, waiterId: true },
+              take: 1,
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        },
+      },
     });
 
     if (!request) {
       throw new NotFoundException('Solicitud no encontrada');
     }
 
+    if (this.isWaiterActor(actor)) {
+      const ownedByWaiter =
+        request.order?.waiterId === actor?.userId ||
+        request.table?.orders?.some((order) => order.waiterId === actor?.userId);
+      if (!ownedByWaiter) {
+        throw new ForbiddenException('Garzon solo puede gestionar solicitudes de sus mesas');
+      }
+    }
+
     const now = new Date();
 
     return this.prisma.tableServiceRequest.update({
-      where: { id: request.id },
+      where: { id: requestId },
       data: {
         status: status as any,
         resolvedById: userId,
@@ -1888,7 +1983,7 @@ export class RestaurantService {
   async getPublicOrderStatus(token: string) {
     const table = await this.resolvePublicTableToken(token);
 
-    const [activeOrder, pendingRequests] = await Promise.all([
+    const [activeOrder, lastOrder, recentRequests] = await Promise.all([
       this.prisma.order.findFirst({
         where: {
           branchId: table.branchId,
@@ -1908,16 +2003,48 @@ export class RestaurantService {
         },
         orderBy: { createdAt: 'desc' },
       }),
+      this.prisma.order.findFirst({
+        where: {
+          branchId: table.branchId,
+          tableId: table.id,
+          deletedAt: null,
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
       this.prisma.tableServiceRequest.findMany({
         where: {
           branchId: table.branchId,
           tableId: table.id,
-          status: { in: ['PENDING', 'ACKNOWLEDGED'] },
         },
         orderBy: { requestedAt: 'desc' },
         take: 20,
       }),
     ]);
+
+    const orderForClient = activeOrder || lastOrder;
+    const lifecycleStatus = orderForClient
+      ? orderForClient.status === 'CANCELLED'
+        ? 'CANCELLED'
+        : orderForClient.status === 'SERVED' || !!orderForClient.closedAt
+          ? 'FINALIZED'
+          : orderForClient.status === 'READY'
+            ? 'READY'
+            : orderForClient.status === 'PREPARING'
+              ? 'PREPARING'
+              : orderForClient.sentToKitchen
+                ? 'SENT'
+                : 'PENDING'
+      : null;
 
     return {
       branch: {
@@ -1930,15 +2057,17 @@ export class RestaurantService {
         sector: table.sector,
         qrToken: table.qrToken,
       },
-      order: activeOrder
+      order: orderForClient
         ? {
-            id: activeOrder.id,
-            orderNumber: activeOrder.orderNumber,
-            status: activeOrder.status,
-            createdAt: activeOrder.createdAt,
-            sentToKitchen: activeOrder.sentToKitchen,
-            sentToCashier: activeOrder.sentToCashier,
-            items: activeOrder.items.map((item) => ({
+            id: orderForClient.id,
+            orderNumber: orderForClient.orderNumber,
+            status: orderForClient.status,
+            lifecycleStatus,
+            createdAt: orderForClient.createdAt,
+            closedAt: orderForClient.closedAt,
+            sentToKitchen: orderForClient.sentToKitchen,
+            sentToCashier: orderForClient.sentToCashier,
+            items: orderForClient.items.map((item) => ({
               id: item.id,
               productName: item.product?.name || 'Producto',
               quantity: item.quantity,
@@ -1948,12 +2077,15 @@ export class RestaurantService {
             })),
           }
         : null,
-      requests: pendingRequests.map((request) => ({
+      requests: recentRequests.map((request) => ({
         id: request.id,
         type: request.type,
         status: request.status,
         message: request.message,
         requestedAt: request.requestedAt,
+        acknowledgedAt: request.acknowledgedAt,
+        resolvedAt: request.resolvedAt,
+        isFinal: ['RESOLVED', 'CANCELLED'].includes(request.status as string),
       })),
       generatedAt: new Date().toISOString(),
     };
@@ -2022,8 +2154,8 @@ export class RestaurantService {
     };
   }
 
-  async getOrderAccount(orderId: string, branchId: string) {
-    const order = await this.ensureOrder(orderId, branchId);
+  async getOrderAccount(orderId: string, branchId: string, actor?: RestaurantActor) {
+    const order = await this.ensureOrder(orderId, branchId, actor);
     const taxRate = await this.getBranchTaxRate(branchId);
     const tipSuggestionPercent = await this.getBranchTipSuggestionPercent(branchId);
 

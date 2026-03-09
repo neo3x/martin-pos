@@ -8,6 +8,7 @@ Periodo considerado: **2026-03-06** a **2026-03-09** (zona horaria segun metadat
 
 | Hash corto | Fecha | Autor | Mensaje |
 |---|---|---|---|
+| `3d8b41e` | 2026-03-09 16:04:22 -0300 | Francisco | creacion de changelog.md |
 | `47eedc0` | 2026-03-09 15:40:22 -0300 | Francisco | mejores mayores en modulos de restaurant |
 | `0e86bda` | 2026-03-09 12:31:11 -0300 | Francisco | cambios mayores en toda la app |
 | `f89d414` | 2026-03-09 07:23:19 -0300 | Francisco | mejoras en setup.sh |
@@ -29,4 +30,28 @@ Periodo considerado: **2026-03-06** a **2026-03-09** (zona horaria segun metadat
 ## Notas
 
 - Este archivo documenta los commits existentes en el historial Git local para el rango solicitado.
-- Si quieres, en la siguiente iteracion puedo agregar una seccion por commit con resumen tecnico (modulos impactados, riesgo y validacion).
+- Adicionalmente se incluye una bitacora de cambios en curso (working tree) aun no confirmados en Git.
+
+## Cambios en curso (sin commit)
+
+Fecha de actualizacion manual: **2026-03-09**
+
+- Roles y permisos operativos:
+  - Redireccion por perfil en login/register/demo.
+  - Dashboard ejecutivo solo para `SUPER_ADMIN` y `ADMIN`.
+  - Sidebar ajustado por rol (sin dashboard/reportes para no administrativos).
+- Restaurante:
+  - Ownership por garzon en consultas de pedidos/ventas/solicitudes.
+  - Restricciones de cierre/cancelacion por rol.
+  - KDS en modo embebido + ruta standalone `/kds` + apertura pop-out.
+- Cliente QR:
+  - Estado de pedido con ciclo completo y estado final visible.
+  - Solicitudes recientes mantienen trazabilidad (`PENDING`, `ACKNOWLEDGED`, `RESOLVED`, `CANCELLED`).
+- Caja y arqueo:
+  - Separacion explicita de ingresos por `VENTAS`, `PROPINAS` y `OTROS`.
+  - Nueva categoria en transaccion de caja (`SALE`, `TIP`, `OTHER`) con migracion Prisma.
+  - Tablas de resumen/historial actualizadas con columnas separadas.
+- Documentacion agregada:
+  - `ROLE_ACCESS_MATRIX.md`
+  - `KDS_STANDALONE.md`
+  - `CASH_TIPS_FLOW.md`

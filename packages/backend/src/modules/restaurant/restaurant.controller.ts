@@ -9,6 +9,7 @@
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { RestaurantService } from './restaurant.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -17,14 +18,33 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 export class RestaurantController {
   constructor(private restaurantService: RestaurantService) {}
+  private readonly adminMetricsRoles = ['SUPER_ADMIN', 'ADMIN'];
+  private readonly kitchenRole = 'KITCHEN';
+
+  private assertNotKitchen(role: string) {
+    if (role === this.kitchenRole) {
+      throw new ForbiddenException('Perfil cocina enfocado: esta accion no esta disponible');
+    }
+  }
+
+  private assertAdminMetrics(role: string) {
+    if (!this.adminMetricsRoles.includes(role)) {
+      throw new ForbiddenException('Solo perfil administrador puede ver dashboard ejecutivo');
+    }
+  }
 
   @Get('tables')
   getTables(@Request() req, @Query('sector') sector?: string) {
-    return this.restaurantService.getTables(req.user.branchId, { sector });
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.getTables(req.user.branchId, { sector }, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get('dashboard')
   getDashboard(@Request() req) {
+    this.assertAdminMetrics(req.user.role);
     return this.restaurantService.getDashboard(req.user.branchId);
   }
 
@@ -33,6 +53,7 @@ export class RestaurantController {
     @Request() req,
     @Body() data: { percent: number },
   ) {
+    this.assertAdminMetrics(req.user.role);
     return this.restaurantService.updateTipSuggestion(req.user.branchId, Number(data.percent));
   }
 
@@ -48,6 +69,7 @@ export class RestaurantController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.getReservations(req.user.branchId, { status, from, to });
   }
 
@@ -65,6 +87,7 @@ export class RestaurantController {
       status?: 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
     },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.createReservation(req.user.branchId, req.user.id, data as any);
   }
 
@@ -83,6 +106,7 @@ export class RestaurantController {
       status?: 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
     },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.updateReservation(reservationId, req.user.branchId, data as any);
   }
 
@@ -92,6 +116,7 @@ export class RestaurantController {
     @Param('id') reservationId: string,
     @Body() data: { status: 'PENDING' | 'CONFIRMED' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW' },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.updateReservationStatus(reservationId, req.user.branchId, data.status as any);
   }
 
@@ -101,6 +126,7 @@ export class RestaurantController {
     @Param('id') reservationId: string,
     @Body() data?: { waiterId?: string; notes?: string },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.seatReservation(reservationId, req.user.branchId, req.user.id, data);
   }
 
@@ -109,6 +135,7 @@ export class RestaurantController {
     @Request() req,
     @Body() data: { number: string; capacity: number; status?: string; sector?: string },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.createTable(req.user.branchId, data);
   }
 
@@ -118,11 +145,13 @@ export class RestaurantController {
     @Param('id') tableId: string,
     @Body() data: { number?: string; capacity?: number; status?: string; sector?: string | null },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.updateTable(tableId, req.user.branchId, data);
   }
 
   @Delete('tables/:id')
   removeTable(@Request() req, @Param('id') tableId: string) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.removeTable(tableId, req.user.branchId);
   }
 
@@ -132,27 +161,41 @@ export class RestaurantController {
     @Param('id') tableId: string,
     @Body() data: { diners: number; waiterId?: string; notes?: string },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.openTable(tableId, req.user.branchId, data, req.user.id);
   }
 
   @Post('tables/:id/release')
   releaseTable(@Request() req, @Param('id') tableId: string) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.releaseTable(tableId, req.user.branchId);
   }
 
   @Get('orders')
   getOrders(@Request() req, @Query('status') status?: string) {
-    return this.restaurantService.getOrders(req.user.branchId, status);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.getOrders(req.user.branchId, status, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get('orders-board')
   getOrdersBoard(@Request() req, @Query('status') status?: string) {
-    return this.restaurantService.getOrdersBoard(req.user.branchId, status);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.getOrdersBoard(req.user.branchId, status, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get('orders/:id/account')
   getOrderAccount(@Request() req, @Param('id') orderId: string) {
-    return this.restaurantService.getOrderAccount(orderId, req.user.branchId);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.getOrderAccount(orderId, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Post('orders/:id/items')
@@ -161,7 +204,11 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Body() data: { items: Array<{ productId: string; quantity: number; notes?: string }> },
   ) {
-    return this.restaurantService.addOrderItems(orderId, req.user.branchId, data);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.addOrderItems(orderId, req.user.branchId, data, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Post('orders/:id/send')
@@ -170,7 +217,11 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Body() data?: { targets?: Array<'KITCHEN' | 'CASHIER'> },
   ) {
-    return this.restaurantService.sendOrder(orderId, req.user.branchId, req.user.id, data?.targets);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.sendOrder(orderId, req.user.branchId, req.user.id, data?.targets, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Put('orders/:id/items/:itemId')
@@ -180,7 +231,13 @@ export class RestaurantController {
     @Param('itemId') itemId: string,
     @Body() data: { quantity?: number; notes?: string; status?: string },
   ) {
-    return this.restaurantService.updateOrderItem(orderId, itemId, req.user.branchId, data);
+    if (req.user.role === this.kitchenRole && (data.quantity !== undefined || data.notes !== undefined)) {
+      throw new ForbiddenException('Cocina solo puede actualizar estado de items');
+    }
+    return this.restaurantService.updateOrderItem(orderId, itemId, req.user.branchId, data, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Delete('orders/:id/items/:itemId')
@@ -189,7 +246,11 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Param('itemId') itemId: string,
   ) {
-    return this.restaurantService.removeOrderItem(orderId, itemId, req.user.branchId);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.removeOrderItem(orderId, itemId, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Put('orders/:id/waiter')
@@ -198,7 +259,11 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Body() data: { waiterId: string },
   ) {
-    return this.restaurantService.assignWaiter(orderId, req.user.branchId, data.waiterId);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.assignWaiter(orderId, req.user.branchId, data.waiterId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Put('orders/:id/diners')
@@ -207,7 +272,11 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Body() data: { diners: number },
   ) {
-    return this.restaurantService.updateDiners(orderId, req.user.branchId, data.diners);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.updateDiners(orderId, req.user.branchId, data.diners, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Post('orders/:id/split-preview')
@@ -216,7 +285,11 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Body() data: { parts: number },
   ) {
-    return this.restaurantService.splitPreview(orderId, req.user.branchId, data.parts);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.splitPreview(orderId, req.user.branchId, data.parts, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Post('orders/:id/pay')
@@ -233,6 +306,7 @@ export class RestaurantController {
       tipPaymentMethod?: 'CASH' | 'CARD' | 'CARD_POS' | 'CARD_WEBPAY' | 'TRANSFER' | 'QR' | 'CREDIT' | 'MIXED';
     },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.payOrder(orderId, req.user.branchId, {
       id: req.user.id,
       role: req.user.role,
@@ -241,7 +315,11 @@ export class RestaurantController {
 
   @Post('orders/:id/close')
   closeAccount(@Request() req, @Param('id') orderId: string) {
-    return this.restaurantService.closeAccount(orderId, req.user.branchId);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.closeAccount(orderId, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Put('orders/:id/status')
@@ -250,7 +328,13 @@ export class RestaurantController {
     @Param('id') orderId: string,
     @Body() data: { status: string },
   ) {
-    return this.restaurantService.updateOrderStatus(orderId, req.user.branchId, data.status);
+    if (req.user.role === this.kitchenRole && !['PREPARING', 'READY', 'SERVED'].includes(data.status)) {
+      throw new ForbiddenException('Cocina solo puede mover pedidos a PREPARING, READY o SERVED');
+    }
+    return this.restaurantService.updateOrderStatus(orderId, req.user.branchId, data.status, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get('service-requests')
@@ -258,7 +342,11 @@ export class RestaurantController {
     @Request() req,
     @Query('status') status?: 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
   ) {
-    return this.restaurantService.getServiceRequests(req.user.branchId, status);
+    this.assertNotKitchen(req.user.role);
+    return this.restaurantService.getServiceRequests(req.user.branchId, status, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Put('service-requests/:id/status')
@@ -267,11 +355,16 @@ export class RestaurantController {
     @Param('id') requestId: string,
     @Body() data: { status: 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED' },
   ) {
+    this.assertNotKitchen(req.user.role);
     return this.restaurantService.updateServiceRequestStatus(
       requestId,
       req.user.branchId,
       req.user.id,
       data.status,
+      {
+        userId: req.user.id,
+        role: req.user.role,
+      },
     );
   }
 }

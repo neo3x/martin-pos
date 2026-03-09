@@ -56,15 +56,14 @@ export class CashRegisterService {
       throw new BadRequestException('El monto final no puede ser negativo');
     }
 
-    const totalSales = register.transactions
-      .filter((t) => t.type === 'INCOME')
-      .reduce((sum, t) => sum + Number(t.amount), 0);
+    const incomeBreakdown = this.computeIncomeBreakdown(register.transactions);
+    const totalIncome = incomeBreakdown.salesIncome + incomeBreakdown.tipsIncome + incomeBreakdown.otherIncome;
 
     const totalExpenses = register.transactions
       .filter((t) => t.type === 'EXPENSE')
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
-    const expectedCash = Number(register.initialCash) + totalSales - totalExpenses;
+    const expectedCash = Number(register.initialCash) + totalIncome - totalExpenses;
     const difference = finalCash - expectedCash;
 
     const closed = await this.prisma.cashRegister.update({
@@ -73,7 +72,7 @@ export class CashRegisterService {
         finalCash,
         expectedCash,
         difference,
-        totalSales,
+        totalSales: incomeBreakdown.salesIncome,
         totalExpenses,
         closedAt: new Date(),
         status: 'CLOSED',
@@ -84,7 +83,7 @@ export class CashRegisterService {
             id: true,
             firstName: true,
             lastName: true,
-            role: true,
+          role: true,
           },
         },
       },
@@ -140,6 +139,7 @@ export class CashRegisterService {
           cashRegisterId: register.id,
           userId,
           type: data.type,
+          category: 'OTHER',
           paymentMethod: data.paymentMethod as any,
           amount,
           description: data.description,
@@ -148,17 +148,13 @@ export class CashRegisterService {
       this.prisma.cashRegister.update({
         where: { id: register.id },
         data: {
-          ...(data.type === 'INCOME'
+          ...(data.type === 'EXPENSE'
             ? {
-                totalSales: {
-                  increment: amount,
-                },
-              }
-            : {
                 totalExpenses: {
                   increment: amount,
                 },
-              }),
+              }
+            : {}),
         },
       }),
     ]);
@@ -263,23 +259,30 @@ export class CashRegisterService {
           role: register.user?.role || 'CASHIER',
           shifts: 0,
           sales: 0,
+          tips: 0,
+          otherIncome: 0,
           expenses: 0,
           difference: 0,
         };
       }
 
       acc[key].shifts += 1;
-      acc[key].sales += Number(register.incomeTotal || 0);
+      acc[key].sales += Number(register.salesIncome || 0);
+      acc[key].tips += Number(register.tipsIncome || 0);
+      acc[key].otherIncome += Number(register.otherIncome || 0);
       acc[key].expenses += Number(register.expenseTotal || 0);
       acc[key].difference += Number(register.difference || 0);
       return acc;
-    }, {} as Record<string, { userId: string; name: string; role: string; shifts: number; sales: number; expenses: number; difference: number }>);
+    }, {} as Record<string, { userId: string; name: string; role: string; shifts: number; sales: number; tips: number; otherIncome: number; expenses: number; difference: number }>);
 
     return {
       totalShifts: normalized.length,
       openShifts: normalized.filter((register) => register.status === 'OPEN').length,
       closedShifts: normalized.filter((register) => register.status === 'CLOSED').length,
       totalIncome: normalized.reduce((sum, register) => sum + Number(register.incomeTotal || 0), 0),
+      totalSalesIncome: normalized.reduce((sum, register) => sum + Number(register.salesIncome || 0), 0),
+      totalTipsIncome: normalized.reduce((sum, register) => sum + Number(register.tipsIncome || 0), 0),
+      totalOtherIncome: normalized.reduce((sum, register) => sum + Number(register.otherIncome || 0), 0),
       totalExpenses: normalized.reduce((sum, register) => sum + Number(register.expenseTotal || 0), 0),
       totalDifference: normalized.reduce((sum, register) => sum + Number(register.difference || 0), 0),
       salesByCashier: Object.values(salesByCashier as any).sort((a: any, b: any) => b.sales - a.sales),
@@ -292,9 +295,8 @@ export class CashRegisterService {
       .filter((tx: any) => tx.type === 'INCOME' && tx.paymentMethod === 'CASH')
       .reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
 
-    const incomeTotal = register.transactions
-      .filter((tx: any) => tx.type === 'INCOME')
-      .reduce((sum: number, tx: any) => sum + Number(tx.amount), 0);
+    const incomeBreakdown = this.computeIncomeBreakdown(register.transactions);
+    const incomeTotal = incomeBreakdown.salesIncome + incomeBreakdown.tipsIncome + incomeBreakdown.otherIncome;
 
     const expenseTotal = register.transactions
       .filter((tx: any) => tx.type === 'EXPENSE')
@@ -306,6 +308,9 @@ export class CashRegisterService {
       ...register,
       transactionCount: register.transactions.length,
       cashSales,
+      salesIncome: incomeBreakdown.salesIncome,
+      tipsIncome: incomeBreakdown.tipsIncome,
+      otherIncome: incomeBreakdown.otherIncome,
       incomeTotal,
       expenseTotal,
       expectedCash,
@@ -314,6 +319,28 @@ export class CashRegisterService {
           ? Number(register.difference || 0)
           : Number(register.finalCash || expectedCash) - expectedCash,
     };
+  }
+
+  private computeIncomeBreakdown(transactions: any[]) {
+    return transactions.reduce(
+      (acc, tx) => {
+        if (tx.type !== 'INCOME') return acc;
+        const category = String(tx.category || 'OTHER').toUpperCase();
+        if (category === 'TIP') {
+          acc.tipsIncome += Number(tx.amount || 0);
+        } else if (category === 'SALE') {
+          acc.salesIncome += Number(tx.amount || 0);
+        } else {
+          acc.otherIncome += Number(tx.amount || 0);
+        }
+        return acc;
+      },
+      {
+        salesIncome: 0,
+        tipsIncome: 0,
+        otherIncome: 0,
+      },
+    );
   }
 }
 

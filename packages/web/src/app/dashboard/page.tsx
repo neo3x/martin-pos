@@ -1,7 +1,8 @@
 ﻿'use client';
 
 import Link from 'next/link';
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -22,6 +23,7 @@ import {
 import { api } from '@/lib/api';
 import { MODULES } from '@/lib/modules';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
+import { canViewExecutiveDashboard, resolveRoleLandingPath } from '@/lib/role-access';
 
 const MODULE_WIDGETS: Record<
   Exclude<BusinessModule, 'ALL'>,
@@ -66,24 +68,36 @@ const MODULE_WIDGETS: Record<
 };
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { user, activeModule } = useAuthStore();
   const moduleType = (activeModule || user?.moduleType || 'ALL') as BusinessModule;
   const moduleMeta = MODULES.find((m) => m.id === moduleType) || MODULES.find((m) => m.id === 'MINIMARKET')!;
   const moduleWidget = moduleType === 'ALL' ? null : MODULE_WIDGETS[moduleType];
+  const canViewDashboard = canViewExecutiveDashboard(user?.role);
+
+  useEffect(() => {
+    if (user && !canViewDashboard) {
+      const landingPath = resolveRoleLandingPath(user.role, moduleType);
+      router.replace(landingPath);
+    }
+  }, [canViewDashboard, user, moduleType, router]);
 
   const { data: dailySales } = useQuery({
     queryKey: ['daily-sales'],
     queryFn: () => api.get('/sales/daily').then((res) => res.data),
+    enabled: canViewDashboard,
   });
 
   const { data: lowStock } = useQuery({
     queryKey: ['low-stock'],
     queryFn: () => api.get('/products/low-stock').then((res) => res.data),
+    enabled: canViewDashboard,
   });
 
   const { data: cashRegister } = useQuery({
     queryKey: ['cash-register-current'],
     queryFn: () => api.get('/cash-register/current').then((res) => res.data).catch(() => null),
+    enabled: canViewDashboard,
   });
 
   const { data: moduleOverview } = useQuery({
@@ -103,7 +117,7 @@ export default function DashboardPage() {
       }
       return null;
     },
-    enabled: moduleType !== 'ALL',
+    enabled: canViewDashboard && moduleType !== 'ALL',
   });
 
   const isRegisterOpen = !!(cashRegister && !cashRegister.closedAt);
@@ -276,6 +290,15 @@ export default function DashboardPage() {
       },
     ];
   }, [moduleType, moduleOverview, dailySales, revenue, lowStock, isRegisterOpen, moduleMeta.name]);
+
+  if (!canViewDashboard) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <h1 className="text-2xl font-bold text-slate-900">Redirigiendo a vista operativa...</h1>
+        <p className="mt-2 text-sm text-slate-600">Tu perfil no tiene acceso al dashboard ejecutivo.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

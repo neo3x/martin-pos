@@ -7,6 +7,7 @@ import { ArrowRight, FlaskConical, ShieldCheck } from 'lucide-react';
 import { MODULES } from '@/lib/modules';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 import { DEMO_ROLE_OPTIONS, getDemoRoles, resolveDemoModule } from '@/lib/demo-profiles';
+import { resolveRoleLandingPath } from '@/lib/role-access';
 import toast from 'react-hot-toast';
 
 export default function DemoPage() {
@@ -25,8 +26,10 @@ export default function DemoPage() {
     setLoading(true);
     try {
       await accessDemo(selected, selectedRole);
+      const authState = useAuthStore.getState();
+      const landingPath = resolveRoleLandingPath(authState.user?.role, authState.activeModule || authState.user?.moduleType);
       toast.success('Demo iniciada');
-      router.push('/dashboard');
+      router.push(landingPath);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'No fue posible iniciar demo');
     } finally {

@@ -580,6 +580,7 @@ model CashRegister {
 model CashTransaction {
   id              String          @id @default(cuid())
   type            TransactionType
+  category        CashTransactionCategory @default(OTHER)
   amount          Decimal         @db.Decimal(10, 2)
   paymentMethod   PaymentMethod
   description     String
@@ -1888,6 +1889,12 @@ enum ReportType {
 enum TransactionType {
   INCOME
   EXPENSE
+}
+
+enum CashTransactionCategory {
+  SALE
+  TIP
+  OTHER
 }
 
 enum Priority {

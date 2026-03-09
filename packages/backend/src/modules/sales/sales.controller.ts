@@ -26,18 +26,27 @@ export class SalesController {
 
   @Get()
   findAll(@Request() req, @Query() filters: any) {
-    return this.salesService.findAll(req.user.branchId, filters);
+    return this.salesService.findAll(req.user.branchId, filters, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get('daily')
   getDailySales(@Request() req, @Query('date') date?: string) {
     const targetDate = date ? new Date(date) : new Date();
-    return this.salesService.getDailySales(req.user.branchId, targetDate);
+    return this.salesService.getDailySales(req.user.branchId, targetDate, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.salesService.findOne(id);
+  findOne(@Param('id') id: string, @Request() req) {
+    return this.salesService.findOne(id, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Post()
@@ -47,12 +56,18 @@ export class SalesController {
 
   @Put(':id/cancel')
   cancel(@Param('id') id: string, @Request() req) {
-    return this.salesService.cancelSale(id, req.user.id);
+    return this.salesService.cancelSale(id, req.user.id, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
   }
 
   @Get(':id/print')
-  async printReceipt(@Param('id') id: string, @Res() res: Response) {
-    const sale = await this.salesService.findOne(id);
+  async printReceipt(@Param('id') id: string, @Request() req, @Res() res: Response) {
+    const sale = await this.salesService.findOne(id, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
 
     try {
       await this.printerService.printSaleReceipt(sale);
@@ -63,8 +78,11 @@ export class SalesController {
   }
 
   @Get(':id/receipt')
-  async getReceiptData(@Param('id') id: string) {
-    const sale = await this.salesService.findOne(id);
+  async getReceiptData(@Param('id') id: string, @Request() req) {
+    const sale = await this.salesService.findOne(id, req.user.branchId, {
+      userId: req.user.id,
+      role: req.user.role,
+    });
     return this.printerService.generateReceiptData(sale);
   }
 }

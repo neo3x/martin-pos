@@ -15,6 +15,23 @@ const ITEM_STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'Cancelado',
 };
 
+const ORDER_LIFECYCLE_LABELS: Record<string, string> = {
+  PENDING: 'Pendiente',
+  SENT: 'Enviada',
+  PREPARING: 'En preparacion',
+  READY: 'Lista',
+  SERVED: 'Entregada',
+  FINALIZED: 'Cerrada/finalizada',
+  CANCELLED: 'Cancelada',
+};
+
+const REQUEST_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Enviada',
+  ACKNOWLEDGED: 'Reconocida',
+  RESOLVED: 'Finalizada',
+  CANCELLED: 'Cancelada',
+};
+
 export default function CustomerQrPage() {
   const params = useParams<{ token: string }>();
   const token = String(params?.token || '');
@@ -119,11 +136,17 @@ export default function CustomerQrPage() {
               ) : statusData?.order ? (
                 <div className="mt-3 space-y-2">
                   <p className="text-sm text-slate-600">
-                    {statusData.order.orderNumber} - {ITEM_STATUS_LABELS[statusData.order.status] || statusData.order.status}
+                    {statusData.order.orderNumber} -{' '}
+                    {ORDER_LIFECYCLE_LABELS[statusData.order.lifecycleStatus || statusData.order.status] || statusData.order.status}
                   </p>
                   <p className="text-xs text-slate-500">
                     {statusData.order.sentToKitchen ? 'Comanda enviada a cocina' : 'Comanda aun no enviada'}
                   </p>
+                  {statusData.order.closedAt && (
+                    <p className="text-xs font-semibold text-emerald-700">
+                      Pedido finalizado el {new Date(statusData.order.closedAt).toLocaleString('es-CL')}
+                    </p>
+                  )}
                   <div className="space-y-1">
                     {(statusData.order.items || []).map((item: any) => (
                       <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs">
@@ -134,7 +157,7 @@ export default function CustomerQrPage() {
                   </div>
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-slate-500">No hay pedido activo para esta mesa.</p>
+                <p className="mt-3 text-sm text-slate-500">No hay pedido registrado para esta mesa.</p>
               )}
             </div>
 
@@ -171,19 +194,22 @@ export default function CustomerQrPage() {
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
                 <ClipboardList className="h-4 w-4" />
-                Solicitudes en curso
+                Solicitudes recientes
               </div>
               <div className="space-y-2 text-xs">
                 {(statusData?.requests || []).map((request: any) => (
                   <div key={request.id} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">
                     <p className="font-semibold">
-                      {request.type === 'BILL' ? 'Cuenta' : 'Consulta'} - {request.status}
+                      {request.type === 'BILL' ? 'Cuenta' : 'Consulta'} - {REQUEST_STATUS_LABELS[request.status] || request.status}
                     </p>
                     <p className="text-slate-500">{new Date(request.requestedAt).toLocaleString('es-CL')}</p>
+                    {request.resolvedAt && (
+                      <p className="text-slate-500">Cierre: {new Date(request.resolvedAt).toLocaleString('es-CL')}</p>
+                    )}
                   </div>
                 ))}
                 {(statusData?.requests || []).length === 0 && (
-                  <p className="text-slate-500">Sin solicitudes activas.</p>
+                  <p className="text-slate-500">Sin solicitudes recientes.</p>
                 )}
               </div>
             </div>

@@ -15,6 +15,7 @@ import {
   Settings,
   Shield,
   ShoppingCart,
+  Soup,
   Star,
   Store,
   Truck,
@@ -42,26 +43,28 @@ type RoleKey =
 const ALL_MODULES = ['ALL', 'RESTAURANT', 'MINIMARKET', 'BOTILLERIA', 'BOOKSTORE'];
 const ALL_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER', 'STOCKER', 'WAITER', 'KITCHEN', 'VIEWER'];
 const MANAGEMENT_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'];
-const CASH_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER'];
+const CASH_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'];
+const DASHBOARD_ROLES: RoleKey[] = ['SUPER_ADMIN', 'ADMIN'];
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ALL_MODULES, roles: ALL_ROLES },
-  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER', 'WAITER'] },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, modules: ALL_MODULES, roles: DASHBOARD_ROLES },
+  { name: 'Ventas', href: '/dashboard/sales', icon: ShoppingCart, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER', 'VIEWER'] },
   { name: 'Caja', href: '/dashboard/cash-register', icon: Banknote, modules: ALL_MODULES, roles: CASH_ROLES },
   { name: 'Productos', href: '/dashboard/products', icon: Package, modules: ALL_MODULES, roles: [...MANAGEMENT_ROLES, 'STOCKER'] },
   { name: 'Inventario', href: '/dashboard/inventory', icon: Store, modules: ALL_MODULES, roles: [...MANAGEMENT_ROLES, 'STOCKER'] },
   { name: 'Transferencias', href: '/dashboard/transfers', icon: Repeat, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
-  { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ALL_MODULES, roles: [...CASH_ROLES, 'VIEWER'] },
+  { name: 'Clientes', href: '/dashboard/customers', icon: Users, modules: ALL_MODULES, roles: [...CASH_ROLES, 'SELLER', 'VIEWER'] },
   { name: 'Fidelizacion', href: '/dashboard/loyalty', icon: Star, modules: ALL_MODULES, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'] },
   { name: 'Empleados', href: '/dashboard/employees', icon: Clock, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
   { name: 'Promociones', href: '/dashboard/promotions', icon: Gift, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
-  { name: 'Facturacion', href: '/dashboard/invoices', icon: FileText, modules: ALL_MODULES, roles: CASH_ROLES },
-  { name: 'Delivery', href: '/dashboard/delivery', icon: Truck, modules: ['ALL', 'RESTAURANT', 'MINIMARKET'], roles: [...CASH_ROLES, 'WAITER'] },
-  { name: 'Apartados', href: '/dashboard/layaway', icon: Wallet, modules: ALL_MODULES, roles: CASH_ROLES },
-  { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, modules: ALL_MODULES, roles: [...MANAGEMENT_ROLES, 'VIEWER'] },
+  { name: 'Facturacion', href: '/dashboard/invoices', icon: FileText, modules: ALL_MODULES, roles: [...CASH_ROLES, 'SELLER'] },
+  { name: 'Delivery', href: '/dashboard/delivery', icon: Truck, modules: ['ALL', 'RESTAURANT', 'MINIMARKET'], roles: [...CASH_ROLES, 'WAITER', 'SELLER'] },
+  { name: 'Apartados', href: '/dashboard/layaway', icon: Wallet, modules: ALL_MODULES, roles: [...CASH_ROLES, 'SELLER'] },
+  { name: 'Reportes', href: '/dashboard/reports', icon: BarChart3, modules: ALL_MODULES, roles: DASHBOARD_ROLES },
   { name: 'Asistente IA', href: '/dashboard/ai', icon: Bot, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
   { name: 'Alertas Fraude', href: '/dashboard/fraud', icon: Shield, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
-  { name: 'Restaurante', href: '/dashboard/restaurant', icon: UtensilsCrossed, modules: ['ALL', 'RESTAURANT'], roles: [...CASH_ROLES, 'WAITER', 'KITCHEN', 'VIEWER'] },
+  { name: 'Restaurante', href: '/dashboard/restaurant', icon: UtensilsCrossed, modules: ['ALL', 'RESTAURANT'], roles: [...CASH_ROLES, 'WAITER', 'VIEWER'] },
+  { name: 'KDS Cocina', href: '/kds', icon: Soup, modules: ['ALL', 'RESTAURANT'], roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'KITCHEN'] },
   { name: 'Configuracion', href: '/dashboard/settings', icon: Settings, modules: ALL_MODULES, roles: MANAGEMENT_ROLES },
 ];
 

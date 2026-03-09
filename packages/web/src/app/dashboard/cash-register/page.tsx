@@ -125,9 +125,11 @@ export default function CashRegisterPage() {
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <StatCard title="Monto Inicial" value={`$${Number(currentRegister.initialCash || 0).toLocaleString('es-CL')}`} icon={<ArrowDownCircle className="h-5 w-5" />} tone="bg-blue-50 text-blue-700" />
-            <StatCard title="Ingresos" value={`$${Number(currentRegister.incomeTotal || 0).toLocaleString('es-CL')}`} icon={<ArrowUpCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
+            <StatCard title="Ventas" value={`$${Number(currentRegister.salesIncome || 0).toLocaleString('es-CL')}`} icon={<ArrowUpCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
+            <StatCard title="Propinas" value={`$${Number(currentRegister.tipsIncome || 0).toLocaleString('es-CL')}`} icon={<DollarSign className="h-5 w-5" />} tone="bg-amber-50 text-amber-700" />
+            <StatCard title="Otros ingresos" value={`$${Number(currentRegister.otherIncome || 0).toLocaleString('es-CL')}`} icon={<WalletCards className="h-5 w-5" />} tone="bg-indigo-50 text-indigo-700" />
             <StatCard title="Egresos" value={`$${Number(currentRegister.expenseTotal || 0).toLocaleString('es-CL')}`} icon={<WalletCards className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
             <StatCard title="Efectivo Esperado" value={`$${expectedCash.toLocaleString('es-CL')}`} icon={<DollarSign className="h-5 w-5" />} tone="bg-amber-50 text-amber-700" />
           </div>
@@ -226,7 +228,9 @@ export default function CashRegisterPage() {
                       )}
                       <div>
                         <p className="font-medium text-slate-900">{tx.description || tx.type}</p>
-                        <p className="text-xs text-slate-500">{new Date(tx.createdAt).toLocaleString('es-CL')}</p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(tx.createdAt).toLocaleString('es-CL')} · {tx.category === 'TIP' ? 'Propina' : tx.category === 'SALE' ? 'Venta' : 'Otro'}
+                        </p>
                       </div>
                     </div>
                     <span className={`font-bold ${tx.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -249,7 +253,9 @@ export default function CashRegisterPage() {
                 <tr className="border-b text-sm text-slate-500">
                   <th className="pb-3 pr-4">Cajero</th>
                   <th className="pb-3 pr-4">Turnos</th>
-                  <th className="pb-3 pr-4">Ingresos</th>
+                  <th className="pb-3 pr-4">Ventas</th>
+                  <th className="pb-3 pr-4">Propinas</th>
+                  <th className="pb-3 pr-4">Otros ingresos</th>
                   <th className="pb-3 pr-4">Egresos</th>
                   <th className="pb-3 pr-4">Diferencia</th>
                 </tr>
@@ -260,6 +266,8 @@ export default function CashRegisterPage() {
                     <td className="py-3 pr-4 font-medium">{item.name}</td>
                     <td className="py-3 pr-4">{item.shifts}</td>
                     <td className="py-3 pr-4">${Number(item.sales).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(item.tips || 0).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(item.otherIncome || 0).toLocaleString('es-CL')}</td>
                     <td className="py-3 pr-4">${Number(item.expenses).toLocaleString('es-CL')}</td>
                     <td className="py-3 pr-4">${Number(item.difference).toLocaleString('es-CL')}</td>
                   </tr>
@@ -281,6 +289,10 @@ export default function CashRegisterPage() {
                   <th className="pb-3 pr-4">Cajero</th>
                   <th className="pb-3 pr-4">Apertura</th>
                   <th className="pb-3 pr-4">Cierre</th>
+                  <th className="pb-3 pr-4">Ventas</th>
+                  <th className="pb-3 pr-4">Propinas</th>
+                  <th className="pb-3 pr-4">Otros ingresos</th>
+                  <th className="pb-3 pr-4">Egresos</th>
                   <th className="pb-3 pr-4">Estado</th>
                   <th className="pb-3 pr-4">Diferencia</th>
                 </tr>
@@ -292,6 +304,10 @@ export default function CashRegisterPage() {
                     <td className="py-3 pr-4">{register.user ? `${register.user.firstName} ${register.user.lastName}` : '-'}</td>
                     <td className="py-3 pr-4">{new Date(register.openedAt).toLocaleString('es-CL')}</td>
                     <td className="py-3 pr-4">{register.closedAt ? new Date(register.closedAt).toLocaleString('es-CL') : '-'}</td>
+                    <td className="py-3 pr-4">${Number(register.salesIncome || 0).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(register.tipsIncome || 0).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(register.otherIncome || 0).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">${Number(register.expenseTotal || 0).toLocaleString('es-CL')}</td>
                     <td className="py-3 pr-4">
                       <span className={`rounded-full px-2 py-1 text-xs ${register.status === 'OPEN' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700'}`}>
                         {register.status}

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { BellRing, CheckCircle, Clock, Plus, Receipt, SendHorizontal, Soup, Users, Utensils, X } from 'lucide-react';
+import { BellRing, CheckCircle, Clock, Download, ExternalLink, Plus, Receipt, SendHorizontal, Soup, Users, Utensils, X } from 'lucide-react';
+import QRCode from 'qrcode';
 import toast from 'react-hot-toast';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 
@@ -59,6 +60,9 @@ export default function RestaurantPage() {
   const canCashier = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'].includes(role);
   const canManageTables = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(role);
   const canManageReservations = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'WAITER', 'CASHIER'].includes(role);
+  const canViewRestaurantAdminMetrics = ['SUPER_ADMIN', 'ADMIN'].includes(role);
+  const kitchenOnlyMode = role === 'KITCHEN';
+  const waiterMode = role === 'WAITER';
 
   const [activeTab, setActiveTab] = useState<'salon' | 'reservas' | 'kds' | 'pedidos' | 'cliente'>('salon');
   const [sectorFilter, setSectorFilter] = useState('');
@@ -78,6 +82,7 @@ export default function RestaurantPage() {
   const [seenServiceRequests, setSeenServiceRequests] = useState<string[]>([]);
   const [customerPreviewTableId, setCustomerPreviewTableId] = useState('');
   const [customerPreviewReloadKey, setCustomerPreviewReloadKey] = useState(0);
+  const [customerQrDataUrl, setCustomerQrDataUrl] = useState('');
   const [reservationForm, setReservationForm] = useState<ReservationForm>({
     customerName: '',
     customerPhone: '',
@@ -91,7 +96,7 @@ export default function RestaurantPage() {
   const { data: dashboard } = useQuery({
     queryKey: ['restaurant-dashboard'],
     queryFn: () => api.get('/restaurant/dashboard').then((res) => res.data),
-    enabled: hasAccess,
+    enabled: hasAccess && canViewRestaurantAdminMetrics,
     refetchInterval: 20000,
   });
 
@@ -159,6 +164,12 @@ export default function RestaurantPage() {
       }
     }
   }, [tables, selectedTableId]);
+
+  useEffect(() => {
+    if (kitchenOnlyMode && activeTab !== 'kds') {
+      setActiveTab('kds');
+    }
+  }, [kitchenOnlyMode, activeTab]);
 
   useEffect(() => {
     if (!customerPreviewTableId && tables?.length) {
@@ -460,6 +471,56 @@ export default function RestaurantPage() {
     [tables, customerPreviewTableId],
   );
   const customerPreviewUrl = customerPreviewTable?.qrToken ? `/cliente/${customerPreviewTable.qrToken}` : '';
+  const customerPreviewAbsoluteUrl = useMemo(() => {
+    if (!customerPreviewUrl) return '';
+    if (typeof window === 'undefined') return customerPreviewUrl;
+    return new URL(customerPreviewUrl, window.location.origin).toString();
+  }, [customerPreviewUrl]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const generateQr = async () => {
+      if (!customerPreviewAbsoluteUrl) {
+        setCustomerQrDataUrl('');
+        return;
+      }
+
+      try {
+        const dataUrl = await QRCode.toDataURL(customerPreviewAbsoluteUrl, {
+          margin: 1,
+          width: 320,
+          color: {
+            dark: '#0f172a',
+            light: '#ffffff',
+          },
+        });
+
+        if (!isCancelled) {
+          setCustomerQrDataUrl(dataUrl);
+        }
+      } catch {
+        if (!isCancelled) {
+          setCustomerQrDataUrl('');
+          toast.error('No se pudo generar el QR para esta mesa');
+        }
+      }
+    };
+
+    void generateQr();
+    return () => {
+      isCancelled = true;
+    };
+  }, [customerPreviewAbsoluteUrl]);
+
+  const downloadCustomerQr = () => {
+    if (!customerQrDataUrl || !customerPreviewTable) return;
+
+    const link = document.createElement('a');
+    link.href = customerQrDataUrl;
+    link.download = `omnipunto-mesa-${customerPreviewTable.number}.png`;
+    link.click();
+  };
 
   const waiterOptions = useMemo(
     () =>
@@ -500,6 +561,23 @@ export default function RestaurantPage() {
 
   const availableCount = Number(dashboard?.tables?.available || 0);
   const occupiedCount = Number(dashboard?.tables?.occupied || 0);
+  const activeOrdersCount = Number((activeOrders || []).length || 0);
+  const myActiveTablesCount = Number(
+    (tables || []).filter((table: any) => table.currentOrder?.waiter?.id === user?.id).length,
+  );
+  const pendingPaymentCount = Number(
+    (tables || []).filter((table: any) => table.operationalStatus === 'PENDING_PAYMENT').length,
+  );
+  const pendingRequestsCount = Number((serviceRequests || []).length || 0);
+
+  const openKdsStandalone = () => {
+    const popup = window.open('/kds', 'omnipunto-kds', 'popup=yes,width=1380,height=900,resizable=yes,scrollbars=yes');
+    if (!popup) {
+      toast.error('El navegador bloqueo la ventana. Habilita pop-ups y vuelve a intentar.');
+      return;
+    }
+    popup.focus();
+  };
 
   return (
     <div className="space-y-6">
@@ -509,55 +587,85 @@ export default function RestaurantPage() {
           <p className="mt-1 text-sm text-slate-500">Salón, reservas, KDS (Kitchen Display System), cuenta y cobro por rol.</p>
         </div>
         <div className="flex gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">
-          <button
-            onClick={() => setActiveTab('salon')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'salon' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            Salón
-          </button>
-          <button
-            onClick={() => setActiveTab('reservas')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'reservas' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            Reservas
-          </button>
+          {!kitchenOnlyMode && (
+            <>
+              <button
+                onClick={() => setActiveTab('salon')}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'salon' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Salón
+              </button>
+              <button
+                onClick={() => setActiveTab('reservas')}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'reservas' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Reservas
+              </button>
+            </>
+          )}
           <button
             onClick={() => setActiveTab('kds')}
             className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'kds' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           >
             KDS (Kitchen Display System)
           </button>
-          <button
-            onClick={() => setActiveTab('pedidos')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'pedidos' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            Pedidos
-          </button>
-          <button
-            onClick={() => setActiveTab('cliente')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'cliente' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-          >
-            Cliente QR
-          </button>
+          {!kitchenOnlyMode && (
+            <>
+              <button
+                onClick={() => setActiveTab('pedidos')}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'pedidos' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Pedidos
+              </button>
+              <button
+                onClick={() => setActiveTab('cliente')}
+                className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'cliente' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                Cliente QR
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <SummaryCard label="Mesas Disponibles" value={`${availableCount}`} icon={<CheckCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
-        <SummaryCard label="Mesas Ocupadas" value={`${occupiedCount}`} icon={<Users className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
-        <SummaryCard
-          label="Reservadas / Pend. pago / Llamados"
-          value={`${Number(dashboard?.tables?.reserved || 0)} / ${Number(dashboard?.tables?.pendingPayment || 0)} / ${Number(dashboard?.serviceRequests?.pending || 0)}`}
-          icon={<Utensils className="h-5 w-5" />}
-          tone="bg-blue-50 text-blue-700"
-        />
-        <SummaryCard
-          label="Ventas hoy / Ticket prom."
-          value={`$${Number(dashboard?.sales?.amount || 0).toLocaleString('es-CL')} / $${Math.round(Number(dashboard?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`}
-          icon={<Clock className="h-5 w-5" />}
-          tone="bg-slate-100 text-slate-700"
-        />
-      </div>
+      {kitchenOnlyMode ? (
+        <div className="grid gap-4 md:grid-cols-4">
+          <SummaryCard label="Pendientes" value={`${kdsQueue?.summary?.pending || 0}`} icon={<Soup className="h-5 w-5" />} tone="bg-amber-50 text-amber-700" />
+          <SummaryCard label="Preparando" value={`${kdsQueue?.summary?.preparing || 0}`} icon={<Clock className="h-5 w-5" />} tone="bg-blue-50 text-blue-700" />
+          <SummaryCard label="Listos" value={`${kdsQueue?.summary?.ready || 0}`} icon={<CheckCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
+          <SummaryCard label="Sobre SLA" value={`${kdsQueue?.summary?.overdue || 0}`} icon={<Clock className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-4">
+          <SummaryCard label="Mesas Disponibles" value={`${availableCount}`} icon={<CheckCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
+          <SummaryCard label="Mesas Ocupadas" value={`${occupiedCount}`} icon={<Users className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
+          <SummaryCard
+            label="Reservadas / Pend. pago / Llamados"
+            value={`${Number(dashboard?.tables?.reserved || 0)} / ${pendingPaymentCount} / ${pendingRequestsCount}`}
+            icon={<Utensils className="h-5 w-5" />}
+            tone="bg-blue-50 text-blue-700"
+          />
+          {canViewRestaurantAdminMetrics ? (
+            <SummaryCard
+              label="Ventas hoy / Ticket prom."
+              value={`$${Number(dashboard?.sales?.amount || 0).toLocaleString('es-CL')} / $${Math.round(Number(dashboard?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`}
+              icon={<Clock className="h-5 w-5" />}
+              tone="bg-slate-100 text-slate-700"
+            />
+          ) : (
+            <SummaryCard
+              label={waiterMode ? 'Mesas a cargo / Pedidos activos' : 'Pedidos activos / Solicitudes'}
+              value={
+                waiterMode
+                  ? `${myActiveTablesCount} / ${activeOrdersCount}`
+                  : `${activeOrdersCount} / ${pendingRequestsCount}`
+              }
+              icon={<Clock className="h-5 w-5" />}
+              tone="bg-slate-100 text-slate-700"
+            />
+          )}
+        </div>
+      )}
 
       {['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'].includes(role) && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1176,13 +1284,30 @@ export default function RestaurantPage() {
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-lg font-bold text-slate-900">KDS (Kitchen Display System) Cocina</h2>
-              <input
-                type="number"
-                min={0}
-                value={kdsMinWait}
-                onChange={(e) => setKdsMinWait(e.target.value)}
-                className="w-24 rounded border border-slate-300 px-2 py-1 text-xs"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={kdsMinWait}
+                  onChange={(e) => setKdsMinWait(e.target.value)}
+                  className="w-24 rounded border border-slate-300 px-2 py-1 text-xs"
+                />
+                <button
+                  onClick={openKdsStandalone}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Abrir KDS en ventana
+                </button>
+                <Link
+                  href="/kds"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+                >
+                  Modo pantalla cocina
+                </Link>
+              </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4">
               <SummaryCard label="Pendientes" value={`${kdsQueue?.summary?.pending || 0}`} icon={<Soup className="h-4 w-4" />} tone="bg-amber-50 text-amber-700" />
@@ -1403,12 +1528,40 @@ export default function RestaurantPage() {
 
               <div className="mt-3 overflow-hidden rounded-xl border border-slate-200">
                 {customerPreviewUrl ? (
-                  <iframe
-                    key={`${customerPreviewUrl}-${customerPreviewReloadKey}`}
-                    src={customerPreviewUrl}
-                    title="Preview cliente QR"
-                    className="h-[640px] w-full bg-white"
-                  />
+                  <div className="grid gap-3 p-3 xl:grid-cols-[280px_1fr]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">QR descargable</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Mesa {customerPreviewTable?.number || '-'}
+                      </p>
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+                        {customerQrDataUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={customerQrDataUrl} alt="QR mesa cliente" className="h-auto w-full" />
+                        ) : (
+                          <div className="flex h-[240px] items-center justify-center text-xs text-slate-500">
+                            Generando QR...
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={downloadCustomerQr}
+                        disabled={!customerQrDataUrl}
+                        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Descargar PNG
+                      </button>
+                      <p className="mt-2 break-all text-[11px] text-slate-500">{customerPreviewAbsoluteUrl}</p>
+                    </div>
+
+                    <iframe
+                      key={`${customerPreviewUrl}-${customerPreviewReloadKey}`}
+                      src={customerPreviewUrl}
+                      title="Preview cliente QR"
+                      className="h-[640px] w-full rounded-xl border border-slate-200 bg-white"
+                    />
+                  </div>
                 ) : (
                   <div className="flex h-[320px] items-center justify-center bg-slate-50 text-sm text-slate-500">
                     Selecciona una mesa para previsualizar el perfil cliente.

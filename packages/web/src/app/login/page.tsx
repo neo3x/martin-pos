@@ -7,6 +7,7 @@ import { ArrowRight, KeyRound } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
 import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
+import { resolveRoleLandingPath } from '@/lib/role-access';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,8 +21,10 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
+      const authState = useAuthStore.getState();
+      const landingPath = resolveRoleLandingPath(authState.user?.role, authState.activeModule || authState.user?.moduleType);
       toast.success('Sesion iniciada');
-      router.push('/dashboard');
+      router.push(landingPath);
     } catch (error: any) {
       toast.error(error?.response?.data?.message || 'Credenciales invalidas');
     } finally {
