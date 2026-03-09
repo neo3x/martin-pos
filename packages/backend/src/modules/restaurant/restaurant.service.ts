@@ -27,6 +27,48 @@ export class RestaurantService {
     return Number((branch?.config as any)?.taxRate || 0.19);
   }
 
+  private normalizeTipPercent(raw: number) {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return 10;
+    return Math.min(100, Math.max(0, Math.round(parsed * 100) / 100));
+  }
+
+  private async getBranchTipSuggestionPercent(branchId: string) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { config: true },
+    });
+    return this.normalizeTipPercent((branch?.config as any)?.restaurantTipSuggestionPercent ?? 10);
+  }
+
+  async updateTipSuggestion(branchId: string, percent: number) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { id: true, config: true },
+    });
+
+    if (!branch) {
+      throw new NotFoundException('Sucursal no encontrada');
+    }
+
+    const sanitized = this.normalizeTipPercent(percent);
+    const config = {
+      ...((branch.config as any) || {}),
+      restaurantTipSuggestionPercent: sanitized,
+    };
+
+    await this.prisma.branch.update({
+      where: { id: branch.id },
+      data: { config },
+    });
+
+    return {
+      branchId,
+      tipSuggestionPercent: sanitized,
+      message: 'Propina sugerida actualizada',
+    };
+  }
+
   private async ensureTable(tableId: string, branchId: string) {
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, branchId, deletedAt: null },
@@ -526,6 +568,7 @@ export class RestaurantService {
         },
         items: {
           where: {
+            sentToKitchen: true,
             status: { in: ['PENDING', 'PREPARING', 'READY'] },
           },
           include: {
@@ -569,6 +612,7 @@ export class RestaurantService {
             quantity: item.quantity,
             status: item.status,
             notes: item.notes,
+            sentAt: item.sentAt,
             waitMinutes: Math.max(
               0,
               Math.floor((now - new Date(item.createdAt).getTime()) / (1000 * 60)),
@@ -606,7 +650,7 @@ export class RestaurantService {
     const endOfDay = new Date(now);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const [tables, salesToday, ordersToday, activeOrders, reservationsToday] = await Promise.all([
+    const [tables, salesToday, ordersToday, activeOrders, reservationsToday, pendingServiceRequests, tipSuggestionPercent] = await Promise.all([
       this.getTables(branchId),
       this.prisma.sale.findMany({
         where: {
@@ -646,7 +690,7 @@ export class RestaurantService {
         },
         include: {
           items: {
-            where: { status: { in: ['PENDING', 'PREPARING', 'READY'] } },
+            where: { status: { in: ['PENDING', 'PREPARING', 'READY'] }, sentToKitchen: true },
             select: { status: true },
           },
         },
@@ -659,6 +703,13 @@ export class RestaurantService {
           status: { in: ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'] },
         },
       }),
+      this.prisma.tableServiceRequest.count({
+        where: {
+          branchId,
+          status: 'PENDING',
+        },
+      }),
+      this.getBranchTipSuggestionPercent(branchId),
     ]);
 
     const ordersById = new Map<string, number>();
@@ -762,7 +813,13 @@ export class RestaurantService {
         pending: reservationsToday.filter((r) => ['PENDING', 'CONFIRMED'].includes(r.status)).length,
         seated: reservationsToday.filter((r) => r.status === 'SEATED').length,
       },
+      serviceRequests: {
+        pending: pendingServiceRequests,
+      },
       kitchen,
+      settings: {
+        tipSuggestionPercent,
+      },
       salesByWaiter: Array.from(salesByWaiterMap.entries())
         .map(([waiter, amount]) => ({ waiter, amount }))
         .sort((a, b) => b.amount - a.amount),
@@ -931,6 +988,10 @@ export class RestaurantService {
           diners: data.diners,
           notes: data.notes,
           status: 'PENDING',
+          sentToKitchen: false,
+          sentToKitchenAt: null,
+          sentToCashier: false,
+          sentToCashierAt: null,
         },
       }),
       this.prisma.table.update({
@@ -1006,6 +1067,108 @@ export class RestaurantService {
     );
   }
 
+  async getOrdersBoard(branchId: string, status?: string) {
+    const where: any = { branchId, deletedAt: null };
+
+    if (status === 'active') {
+      where.status = { in: ACTIVE_ORDER_STATUSES };
+    } else if (status) {
+      where.status = status;
+    }
+
+    const orders = await this.prisma.order.findMany({
+      where,
+      include: {
+        table: {
+          select: { id: true, number: true, sector: true, status: true },
+        },
+        waiter: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
+        items: {
+          select: {
+            id: true,
+            status: true,
+            quantity: true,
+            paidQuantity: true,
+            sentToKitchen: true,
+            createdAt: true,
+          },
+        },
+        serviceRequests: {
+          where: { status: { in: ['PENDING', 'ACKNOWLEDGED'] } },
+          select: { id: true, type: true, status: true, requestedAt: true },
+          orderBy: { requestedAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 150,
+    });
+
+    const normalized = orders.map((order) => {
+      const now = Date.now();
+      const totals = order.items.reduce(
+        (acc, item) => {
+          if (item.status === 'PENDING') acc.pending += 1;
+          if (item.status === 'PREPARING') acc.preparing += 1;
+          if (item.status === 'READY') acc.ready += 1;
+          if (item.status === 'SERVED') acc.served += 1;
+          if (!item.sentToKitchen && Number(item.quantity) > Number(item.paidQuantity || 0)) acc.draft += 1;
+          return acc;
+        },
+        { pending: 0, preparing: 0, ready: 0, served: 0, draft: 0 },
+      );
+
+      const oldest = order.items[0];
+      const waitMinutes = oldest
+        ? Math.max(0, Math.floor((now - new Date(oldest.createdAt).getTime()) / (1000 * 60)))
+        : 0;
+
+      return {
+        id: order.id,
+        orderNumber: order.orderNumber,
+        status: order.status,
+        diners: order.diners,
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        sentToKitchen: order.sentToKitchen,
+        sentToKitchenAt: order.sentToKitchenAt,
+        sentToCashier: order.sentToCashier,
+        sentToCashierAt: order.sentToCashierAt,
+        waitMinutes,
+        table: order.table,
+        waiter: order.waiter,
+        serviceRequests: order.serviceRequests,
+        metrics: totals,
+      };
+    });
+
+    const summary = normalized.reduce(
+      (acc, order) => {
+        acc.total += 1;
+        if (order.status === 'PENDING') acc.pendingOrders += 1;
+        if (order.status === 'PREPARING') acc.preparingOrders += 1;
+        if (order.status === 'READY') acc.readyOrders += 1;
+        if (order.metrics.draft > 0) acc.withDraftItems += 1;
+        acc.pendingServiceRequests += order.serviceRequests.filter((r) => r.status === 'PENDING').length;
+        return acc;
+      },
+      {
+        total: 0,
+        pendingOrders: 0,
+        preparingOrders: 0,
+        readyOrders: 0,
+        withDraftItems: 0,
+        pendingServiceRequests: 0,
+      },
+    );
+
+    return {
+      summary,
+      orders: normalized,
+    };
+  }
+
   async addOrderItems(
     orderId: string,
     branchId: string,
@@ -1051,6 +1214,8 @@ export class RestaurantService {
             paidQuantity: 0,
             notes: item.notes,
             status: 'PENDING',
+            sentToKitchen: false,
+            sentAt: null,
           },
         });
       }
@@ -1059,6 +1224,7 @@ export class RestaurantService {
         where: { id: order.id },
         data: {
           status: 'PENDING',
+          sentToCashier: false,
         },
       });
 
@@ -1074,6 +1240,73 @@ export class RestaurantService {
     });
 
     return this.getOrderAccount(order.id, branchId);
+  }
+
+  async sendOrder(
+    orderId: string,
+    branchId: string,
+    sentById: string,
+    targets?: Array<'KITCHEN' | 'CASHIER'>,
+  ) {
+    const order = await this.ensureOrder(orderId, branchId);
+
+    if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
+      throw new BadRequestException('No se puede enviar un pedido cerrado o cancelado');
+    }
+
+    const normalizedTargets = (targets?.length ? targets : ['KITCHEN', 'CASHIER']) as Array<'KITCHEN' | 'CASHIER'>;
+    const sendToKitchen = normalizedTargets.includes('KITCHEN');
+    const sendToCashier = normalizedTargets.includes('CASHIER');
+
+    if (!sendToKitchen && !sendToCashier) {
+      throw new BadRequestException('Debe indicar al menos un destino de envio');
+    }
+
+    const draftItems = order.items.filter(
+      (item) => !item.sentToKitchen && Number(item.quantity) > Number(item.paidQuantity || 0),
+    );
+
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      if (sendToKitchen && draftItems.length > 0) {
+        await tx.orderItem.updateMany({
+          where: { id: { in: draftItems.map((item) => item.id) } },
+          data: {
+            sentToKitchen: true,
+            sentAt: now,
+            status: 'PENDING',
+          },
+        });
+      }
+
+      await tx.order.update({
+        where: { id: order.id },
+        data: {
+          ...(sendToKitchen ? { sentToKitchen: true, sentToKitchenAt: now } : {}),
+          ...(sendToCashier ? { sentToCashier: true, sentToCashierAt: now } : {}),
+          status: order.status === 'READY' ? 'READY' : 'PENDING',
+          notes: [order.notes, `Enviado por ${sentById} ${now.toISOString()}`]
+            .filter(Boolean)
+            .join(' | '),
+        },
+      });
+    });
+
+    const account = await this.getOrderAccount(order.id, branchId);
+
+    return {
+      account,
+      sentItems: sendToKitchen ? draftItems.length : 0,
+      sentToKitchen: sendToKitchen,
+      sentToCashier: sendToCashier,
+      message:
+        sendToKitchen && draftItems.length > 0
+          ? `Pedido enviado: ${draftItems.length} item(s) a cocina y visible para caja`
+          : sendToCashier
+            ? 'Pedido visible para caja'
+            : 'Sin cambios de envio',
+    };
   }
 
   async updateOrderItem(
@@ -1107,6 +1340,7 @@ export class RestaurantService {
         ...(data.quantity !== undefined ? { quantity: data.quantity } : {}),
         ...(data.notes !== undefined ? { notes: data.notes } : {}),
         ...(data.status !== undefined ? { status: data.status as any } : {}),
+        ...(data.status !== undefined && !item.sentToKitchen ? { sentToKitchen: true, sentAt: new Date() } : {}),
       },
     });
 
@@ -1214,6 +1448,8 @@ export class RestaurantService {
       notes?: string;
       mode?: 'FULL' | 'CUSTOM';
       items?: Array<{ orderItemId: string; quantity: number }>;
+      tipAmount?: number;
+      tipPaymentMethod?: PaymentMethod;
     }
   ) {
     this.ensureCashierRole(cashier.role);
@@ -1234,6 +1470,10 @@ export class RestaurantService {
     const order = await this.ensureOrder(orderId, branchId);
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
       throw new BadRequestException('El pedido no estÃ¡ activo para cobro');
+    }
+
+    if (!order.sentToCashier) {
+      throw new BadRequestException('Debe enviar el pedido a caja antes de cobrar');
     }
 
     const remainingItems = order.items
@@ -1282,6 +1522,8 @@ export class RestaurantService {
       };
     });
 
+    const tipAmount = Math.max(0, Math.round(Number(payload.tipAmount || 0)));
+
     const sale = await this.salesService.create(
       {
         items: saleItems.map((item) => ({
@@ -1298,6 +1540,31 @@ export class RestaurantService {
       cashier.id,
       branchId,
     );
+
+    if (tipAmount > 0) {
+      const tipPaymentMethod = payload.tipPaymentMethod || payload.paymentMethod;
+      await this.prisma.$transaction([
+        this.prisma.cashTransaction.create({
+          data: {
+            cashRegisterId: openRegister.id,
+            userId: cashier.id,
+            type: 'INCOME',
+            amount: tipAmount,
+            paymentMethod: tipPaymentMethod as any,
+            description: `Propina sugerida - Pedido ${order.orderNumber}`,
+            saleId: sale.id,
+          },
+        }),
+        this.prisma.cashRegister.update({
+          where: { id: openRegister.id },
+          data: {
+            totalSales: {
+              increment: tipAmount,
+            },
+          },
+        }),
+      ]);
+    }
 
     await this.prisma.$transaction(async (tx) => {
       for (const item of saleItems) {
@@ -1342,6 +1609,7 @@ export class RestaurantService {
 
     return {
       sale,
+      tipAmount,
       account,
       message: Number(account.totals.remainingTotal) > 0
         ? 'Cobro parcial registrado'
@@ -1425,6 +1693,7 @@ export class RestaurantService {
       where: { id: order.id },
       data: {
         status: status as any,
+        ...(status === 'PREPARING' || status === 'READY' ? { sentToKitchen: true, sentToKitchenAt: new Date() } : {}),
         ...(status === 'SERVED' ? { closedAt: new Date() } : {}),
       },
     });
@@ -1432,9 +1701,331 @@ export class RestaurantService {
     return this.getOrderAccount(order.id, branchId);
   }
 
+  async getServiceRequests(
+    branchId: string,
+    status?: 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
+  ) {
+    const where: any = { branchId };
+    if (status) where.status = status;
+
+    return this.prisma.tableServiceRequest.findMany({
+      where,
+      include: {
+        table: {
+          select: { id: true, number: true, sector: true },
+        },
+        order: {
+          select: { id: true, orderNumber: true, status: true },
+        },
+        resolvedBy: {
+          select: { id: true, firstName: true, lastName: true, role: true },
+        },
+      },
+      orderBy: [{ status: 'asc' }, { requestedAt: 'asc' }],
+      take: 300,
+    });
+  }
+
+  async updateServiceRequestStatus(
+    requestId: string,
+    branchId: string,
+    userId: string,
+    status: 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
+  ) {
+    const request = await this.prisma.tableServiceRequest.findFirst({
+      where: { id: requestId, branchId },
+      select: { id: true, status: true },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Solicitud no encontrada');
+    }
+
+    const now = new Date();
+
+    return this.prisma.tableServiceRequest.update({
+      where: { id: request.id },
+      data: {
+        status: status as any,
+        resolvedById: userId,
+        ...(status === 'ACKNOWLEDGED' ? { acknowledgedAt: now } : {}),
+        ...(status === 'RESOLVED' || status === 'CANCELLED' ? { resolvedAt: now } : {}),
+      },
+      include: {
+        table: {
+          select: { id: true, number: true, sector: true },
+        },
+        order: {
+          select: { id: true, orderNumber: true, status: true },
+        },
+      },
+    });
+  }
+
+  private async resolvePublicTableToken(token: string) {
+    const trimmedToken = String(token || '').trim();
+    if (!trimmedToken) {
+      throw new BadRequestException('Token de mesa invalido');
+    }
+
+    const table = await this.prisma.table.findFirst({
+      where: {
+        qrToken: trimmedToken,
+        deletedAt: null,
+      },
+      include: {
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            moduleType: true,
+          },
+        },
+      },
+    });
+
+    if (!table) {
+      throw new NotFoundException('Mesa no encontrada');
+    }
+
+    return table;
+  }
+
+  async getPublicTableMenu(token: string) {
+    const table = await this.resolvePublicTableToken(token);
+
+    const [products, activeOrder] = await Promise.all([
+      this.prisma.product.findMany({
+        where: {
+          branchId: table.branchId,
+          deletedAt: null,
+          status: 'ACTIVE',
+        },
+        include: {
+          category: {
+            select: { id: true, name: true },
+          },
+        },
+        orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }],
+      }),
+      this.prisma.order.findFirst({
+        where: {
+          branchId: table.branchId,
+          tableId: table.id,
+          deletedAt: null,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    const categories = new Map<string, { id: string; name: string; items: any[] }>();
+    for (const product of products) {
+      const categoryId = product.categoryId;
+      if (!categories.has(categoryId)) {
+        categories.set(categoryId, {
+          id: categoryId,
+          name: product.category?.name || 'General',
+          items: [],
+        });
+      }
+
+      categories.get(categoryId)!.items.push({
+        id: product.id,
+        sku: product.sku,
+        name: product.name,
+        description: product.description,
+        price: Number(product.price),
+        stock: Number(product.stock),
+        available: Number(product.stock) > 0,
+      });
+    }
+
+    return {
+      branch: {
+        id: table.branch.id,
+        name: table.branch.name,
+        moduleType: table.branch.moduleType,
+      },
+      table: {
+        id: table.id,
+        number: table.number,
+        sector: table.sector,
+        qrToken: table.qrToken,
+      },
+      menu: Array.from(categories.values()),
+      activeOrder: activeOrder
+        ? {
+            id: activeOrder.id,
+            orderNumber: activeOrder.orderNumber,
+            status: activeOrder.status,
+            diners: activeOrder.diners,
+            sentToKitchen: activeOrder.sentToKitchen,
+            sentToCashier: activeOrder.sentToCashier,
+            items: activeOrder.items.map((item) => ({
+              id: item.id,
+              productName: item.product?.name || 'Producto',
+              quantity: item.quantity,
+              status: item.status,
+              notes: item.notes,
+            })),
+          }
+        : null,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  async getPublicOrderStatus(token: string) {
+    const table = await this.resolvePublicTableToken(token);
+
+    const [activeOrder, pendingRequests] = await Promise.all([
+      this.prisma.order.findFirst({
+        where: {
+          branchId: table.branchId,
+          tableId: table.id,
+          deletedAt: null,
+          status: { in: ACTIVE_ORDER_STATUSES },
+        },
+        include: {
+          items: {
+            include: {
+              product: {
+                select: { id: true, name: true },
+              },
+            },
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.tableServiceRequest.findMany({
+        where: {
+          branchId: table.branchId,
+          tableId: table.id,
+          status: { in: ['PENDING', 'ACKNOWLEDGED'] },
+        },
+        orderBy: { requestedAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    return {
+      branch: {
+        id: table.branch.id,
+        name: table.branch.name,
+      },
+      table: {
+        id: table.id,
+        number: table.number,
+        sector: table.sector,
+        qrToken: table.qrToken,
+      },
+      order: activeOrder
+        ? {
+            id: activeOrder.id,
+            orderNumber: activeOrder.orderNumber,
+            status: activeOrder.status,
+            createdAt: activeOrder.createdAt,
+            sentToKitchen: activeOrder.sentToKitchen,
+            sentToCashier: activeOrder.sentToCashier,
+            items: activeOrder.items.map((item) => ({
+              id: item.id,
+              productName: item.product?.name || 'Producto',
+              quantity: item.quantity,
+              status: item.status,
+              notes: item.notes,
+              sentToKitchen: item.sentToKitchen,
+            })),
+          }
+        : null,
+      requests: pendingRequests.map((request) => ({
+        id: request.id,
+        type: request.type,
+        status: request.status,
+        message: request.message,
+        requestedAt: request.requestedAt,
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  async createServiceRequestFromTable(
+    token: string,
+    data: { type: 'CONSULTATION' | 'BILL'; message?: string },
+  ) {
+    const table = await this.resolvePublicTableToken(token);
+    const type = data?.type;
+
+    if (!['CONSULTATION', 'BILL'].includes(type)) {
+      throw new BadRequestException('Tipo de solicitud invalido');
+    }
+
+    const activeOrder = await this.prisma.order.findFirst({
+      where: {
+        branchId: table.branchId,
+        tableId: table.id,
+        deletedAt: null,
+        status: { in: ACTIVE_ORDER_STATUSES },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    });
+
+    const lastRequest = await this.prisma.tableServiceRequest.findFirst({
+      where: {
+        branchId: table.branchId,
+        tableId: table.id,
+        type: type as any,
+        status: 'PENDING',
+      },
+      orderBy: { requestedAt: 'desc' },
+      select: { id: true, requestedAt: true },
+    });
+
+    if (lastRequest) {
+      const elapsedMs = Date.now() - new Date(lastRequest.requestedAt).getTime();
+      if (elapsedMs < 90 * 1000) {
+        return {
+          id: lastRequest.id,
+          message: 'Ya existe una solicitud pendiente reciente para esta mesa',
+        };
+      }
+    }
+
+    const request = await this.prisma.tableServiceRequest.create({
+      data: {
+        branchId: table.branchId,
+        tableId: table.id,
+        orderId: activeOrder?.id || null,
+        type: type as any,
+        status: 'PENDING',
+        message: data?.message?.trim() || null,
+      },
+    });
+
+    return {
+      id: request.id,
+      status: request.status,
+      type: request.type,
+      requestedAt: request.requestedAt,
+      message: 'Solicitud enviada al garzon',
+    };
+  }
+
   async getOrderAccount(orderId: string, branchId: string) {
     const order = await this.ensureOrder(orderId, branchId);
     const taxRate = await this.getBranchTaxRate(branchId);
+    const tipSuggestionPercent = await this.getBranchTipSuggestionPercent(branchId);
 
     const lines = order.items.map((item) => {
       const quantity = Number(item.quantity);
@@ -1459,6 +2050,8 @@ export class RestaurantService {
         remainingSubtotal,
         notes: item.notes,
         status: item.status,
+        sentToKitchen: item.sentToKitchen,
+        sentAt: item.sentAt,
       };
     });
 
@@ -1473,6 +2066,8 @@ export class RestaurantService {
     const total = subtotal + tax;
     const paidTotal = paidSubtotal + paidTax;
     const remainingTotal = Math.max(0, total - paidTotal);
+    const suggestedTipOnTotal = Math.round((total * tipSuggestionPercent) / 100);
+    const suggestedTipOnRemaining = Math.round((remainingTotal * tipSuggestionPercent) / 100);
 
     const payments = await this.prisma.sale.findMany({
       where: {
@@ -1507,6 +2102,10 @@ export class RestaurantService {
         createdAt: order.createdAt,
         updatedAt: order.updatedAt,
         closedAt: order.closedAt,
+        sentToKitchen: order.sentToKitchen,
+        sentToKitchenAt: order.sentToKitchenAt,
+        sentToCashier: order.sentToCashier,
+        sentToCashierAt: order.sentToCashierAt,
       },
       table: {
         id: order.table.id,
@@ -1528,6 +2127,11 @@ export class RestaurantService {
         remainingSubtotal,
         remainingTax,
         remainingTotal,
+        tipSuggestionPercent,
+        suggestedTipOnTotal,
+        suggestedTipOnRemaining,
+        totalWithSuggestedTipOnTotal: total + suggestedTipOnTotal,
+        totalWithSuggestedTipOnRemaining: remainingTotal + suggestedTipOnRemaining,
       },
       isFullyPaid: remainingTotal <= 0,
     };

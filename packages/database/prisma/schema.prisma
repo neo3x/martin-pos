@@ -1,4 +1,4 @@
-﻿// This is your Prisma schema file
+// This is your Prisma schema file
 
 generator client {
   provider = "prisma-client-js"
@@ -43,6 +43,7 @@ model User {
   commissions        Commission[]
   createdTransfers   InventoryTransfer[] @relation("TransferCreatedBy")
   createdReservations Reservation[]      @relation("ReservationCreatedBy")
+  resolvedServiceRequests TableServiceRequest[] @relation("ServiceRequestResolvedBy")
 
   @@index([email])
   @@index([branchId])
@@ -84,6 +85,7 @@ model Branch {
   transfersTo        InventoryTransfer[] @relation("TransferToBranch")
   deliveryOrders     DeliveryOrder[]
   invoices           Invoice[]
+  serviceRequests    TableServiceRequest[]
 
   @@index([moduleType])
   @@map("branches")
@@ -355,6 +357,7 @@ model Customer {
 model Table {
   id              String      @id @default(cuid())
   number          String
+  qrToken         String      @unique @default(cuid())
   capacity        Int
   status          TableStatus @default(AVAILABLE)
   currentOrderId  String?
@@ -373,6 +376,7 @@ model Table {
   orders          Order[]
   reservations    Reservation[]
   sales           Sale[]
+  serviceRequests TableServiceRequest[]
 
   @@unique([branchId, number])
   @@index([branchId])
@@ -416,6 +420,10 @@ model Order {
   diners      Int         @default(1)
   notes       String?
   closedAt    DateTime?
+  sentToKitchen   Boolean   @default(false)
+  sentToKitchenAt DateTime?
+  sentToCashier   Boolean   @default(false)
+  sentToCashierAt DateTime?
 
   tableId     String
   table       Table       @relation(fields: [tableId], references: [id])
@@ -432,6 +440,7 @@ model Order {
 
   // Relations
   items       OrderItem[]
+  serviceRequests TableServiceRequest[]
 
   @@index([orderNumber])
   @@index([tableId])
@@ -448,6 +457,8 @@ model OrderItem {
   status      OrderStatus @default(PENDING)
   notes       String?
   preparedAt  DateTime?
+  sentToKitchen Boolean   @default(false)
+  sentAt      DateTime?
 
   productId   String
   product     Product     @relation(fields: [productId], references: [id])
@@ -462,6 +473,36 @@ model OrderItem {
   @@index([productId])
   @@index([status])
   @@map("order_items")
+}
+
+model TableServiceRequest {
+  id            String               @id @default(cuid())
+  type          ServiceRequestType
+  status        ServiceRequestStatus @default(PENDING)
+  message       String?
+  requestedAt   DateTime             @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt    DateTime?
+
+  branchId      String
+  branch        Branch               @relation(fields: [branchId], references: [id])
+
+  tableId       String
+  table         Table                @relation(fields: [tableId], references: [id])
+
+  orderId       String?
+  order         Order?               @relation(fields: [orderId], references: [id])
+
+  resolvedById  String?
+  resolvedBy    User?                @relation("ServiceRequestResolvedBy", fields: [resolvedById], references: [id])
+
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([branchId, status])
+  @@index([tableId, status])
+  @@index([requestedAt])
+  @@map("table_service_requests")
 }
 
 model Recipe {
@@ -1811,6 +1852,18 @@ enum ReservationStatus {
   COMPLETED
   CANCELLED
   NO_SHOW
+}
+
+enum ServiceRequestType {
+  CONSULTATION
+  BILL
+}
+
+enum ServiceRequestStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
+  CANCELLED
 }
 
 enum InputMethod {

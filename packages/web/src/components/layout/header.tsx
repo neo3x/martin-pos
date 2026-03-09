@@ -1,21 +1,50 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogOut, User2 } from 'lucide-react';
+import { Loader2, LogOut, User2 } from 'lucide-react';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 import { MODULE_NAME_MAP } from '@/lib/modules';
 import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
+import { getDemoRoles, resolveDemoModule } from '@/lib/demo-profiles';
+import toast from 'react-hot-toast';
 
 export function Header() {
   const router = useRouter();
-  const { user, logout, activeModule, setActiveModule } = useAuthStore();
+  const { user, logout, activeModule, setActiveModule, accessDemo } = useAuthStore();
+  const [isSwitchingRole, setIsSwitchingRole] = useState(false);
+  const [demoRole, setDemoRole] = useState(user?.role || 'ADMIN');
 
   const availableModules = (user?.availableModules?.length ? user.availableModules : [user?.moduleType || 'ALL']) as BusinessModule[];
   const currentModule = (activeModule || user?.moduleType || 'ALL') as BusinessModule;
+  const demoModule = resolveDemoModule(currentModule || user?.moduleType || 'MINIMARKET');
+  const demoRoles = useMemo(() => getDemoRoles(demoModule), [demoModule]);
+
+  useEffect(() => {
+    setDemoRole(user?.role || 'ADMIN');
+  }, [user?.role]);
 
   const handleLogout = () => {
     logout();
     router.push('/login');
+  };
+
+  const handleDemoRoleSwitch = async (nextRole: string) => {
+    if (!user?.isDemo || nextRole === user?.role) return;
+
+    setIsSwitchingRole(true);
+    try {
+      await accessDemo(demoModule, nextRole);
+      setActiveModule(demoModule);
+      toast.success(`Perfil demo cambiado a ${nextRole}`);
+      router.replace('/dashboard');
+      router.refresh();
+    } catch (error: any) {
+      setDemoRole(user?.role || 'ADMIN');
+      toast.error(error?.response?.data?.message || 'No fue posible cambiar el perfil demo');
+    } finally {
+      setIsSwitchingRole(false);
+    }
   };
 
   return (
@@ -50,6 +79,29 @@ export function Header() {
               ))}
             </select>
           </div>
+
+          {user?.isDemo && (
+            <div className="hidden items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-1.5 md:flex">
+              <label className="text-xs font-semibold uppercase tracking-wide text-indigo-700">Perfil demo</label>
+              <select
+                value={demoRole}
+                disabled={isSwitchingRole}
+                onChange={(e) => {
+                  const nextRole = e.target.value;
+                  setDemoRole(nextRole);
+                  void handleDemoRoleSwitch(nextRole);
+                }}
+                className="rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 focus:outline-none"
+              >
+                {demoRoles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+              {isSwitchingRole && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />}
+            </div>
+          )}
 
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700">
             <User2 className="h-4 w-4" />

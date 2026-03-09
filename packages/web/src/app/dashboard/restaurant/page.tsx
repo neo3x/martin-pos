@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { CheckCircle, Clock, Plus, Receipt, Soup, Users, Utensils, X } from 'lucide-react';
+import { BellRing, CheckCircle, Clock, Plus, Receipt, SendHorizontal, Soup, Users, Utensils, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 
@@ -60,7 +60,7 @@ export default function RestaurantPage() {
   const canManageTables = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(role);
   const canManageReservations = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'WAITER', 'CASHIER'].includes(role);
 
-  const [activeTab, setActiveTab] = useState<'salon' | 'reservas' | 'kds'>('salon');
+  const [activeTab, setActiveTab] = useState<'salon' | 'reservas' | 'kds' | 'pedidos' | 'cliente'>('salon');
   const [sectorFilter, setSectorFilter] = useState('');
   const [selectedTableId, setSelectedTableId] = useState<string>('');
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
@@ -73,6 +73,9 @@ export default function RestaurantPage() {
   const [customSplit, setCustomSplit] = useState<Record<string, number>>({});
   const [searchProduct, setSearchProduct] = useState('');
   const [kdsMinWait, setKdsMinWait] = useState('0');
+  const [tipSuggestionPercentInput, setTipSuggestionPercentInput] = useState('10');
+  const [tipAmount, setTipAmount] = useState('0');
+  const [seenServiceRequests, setSeenServiceRequests] = useState<string[]>([]);
   const [reservationForm, setReservationForm] = useState<ReservationForm>({
     customerName: '',
     customerPhone: '',
@@ -131,6 +134,20 @@ export default function RestaurantPage() {
     enabled: hasAccess,
   });
 
+  const { data: ordersBoard } = useQuery({
+    queryKey: ['restaurant-orders-board'],
+    queryFn: () => api.get('/restaurant/orders-board?status=active').then((res) => res.data),
+    enabled: hasAccess,
+    refetchInterval: 10000,
+  });
+
+  const { data: serviceRequests } = useQuery({
+    queryKey: ['restaurant-service-requests'],
+    queryFn: () => api.get('/restaurant/service-requests?status=PENDING').then((res) => res.data),
+    enabled: hasAccess,
+    refetchInterval: 7000,
+  });
+
   useEffect(() => {
     if (!selectedTableId && tables?.length) {
       const preferred = tables.find((t: any) => t.currentOrder?.id) || tables[0];
@@ -141,11 +158,41 @@ export default function RestaurantPage() {
     }
   }, [tables, selectedTableId]);
 
+  useEffect(() => {
+    const percent = Number(dashboard?.settings?.tipSuggestionPercent);
+    if (Number.isFinite(percent)) {
+      setTipSuggestionPercentInput(String(percent));
+    }
+  }, [dashboard?.settings?.tipSuggestionPercent]);
+
+  useEffect(() => {
+    if (!serviceRequests?.length) return;
+
+    const incoming = serviceRequests.filter((request: any) => !seenServiceRequests.includes(request.id));
+    if (!incoming.length) return;
+
+    incoming.forEach((request: any) => {
+      if (['WAITER', 'MANAGER', 'ADMIN', 'SUPER_ADMIN', 'CASHIER'].includes(role)) {
+        const kind = request.type === 'BILL' ? 'Solicita cuenta' : 'Consulta';
+        toast(`${kind} - Mesa ${request.table?.number || '-'}`);
+      }
+    });
+
+    setSeenServiceRequests((prev) => [...prev, ...incoming.map((request: any) => request.id)]);
+  }, [serviceRequests, seenServiceRequests, role]);
+
   const { data: account, refetch: refetchAccount } = useQuery({
     queryKey: ['restaurant-account', selectedOrderId],
     queryFn: () => api.get(`/restaurant/orders/${selectedOrderId}/account`).then((res) => res.data),
     enabled: !!selectedOrderId && hasAccess,
   });
+
+  useEffect(() => {
+    const suggested = Number(account?.totals?.suggestedTipOnRemaining || 0);
+    if (Number.isFinite(suggested)) {
+      setTipAmount(String(suggested));
+    }
+  }, [account?.order?.id, account?.totals?.suggestedTipOnRemaining]);
 
   const invalidateRestaurant = () => {
     queryClient.invalidateQueries({ queryKey: ['restaurant-dashboard'] });
@@ -153,6 +200,8 @@ export default function RestaurantPage() {
     queryClient.invalidateQueries({ queryKey: ['restaurant-reservations'] });
     queryClient.invalidateQueries({ queryKey: ['restaurant-kds'] });
     queryClient.invalidateQueries({ queryKey: ['restaurant-active-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['restaurant-orders-board'] });
+    queryClient.invalidateQueries({ queryKey: ['restaurant-service-requests'] });
     queryClient.invalidateQueries({ queryKey: ['restaurant-account'] });
     queryClient.invalidateQueries({ queryKey: ['products'] });
     queryClient.invalidateQueries({ queryKey: ['cash-register-current'] });
@@ -172,6 +221,18 @@ export default function RestaurantPage() {
       invalidateRestaurant();
     },
     onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo crear la mesa'),
+  });
+
+  const updateTipSuggestionMutation = useMutation({
+    mutationFn: () =>
+      api.put('/restaurant/settings/tip-suggestion', {
+        percent: Number(tipSuggestionPercentInput || 0),
+      }),
+    onSuccess: () => {
+      toast.success('Propina sugerida actualizada');
+      invalidateRestaurant();
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo actualizar propina sugerida'),
   });
 
   const openTableMutation = useMutation({
@@ -207,6 +268,16 @@ export default function RestaurantPage() {
       refetchAccount();
     },
     onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo agregar item'),
+  });
+
+  const sendOrderMutation = useMutation({
+    mutationFn: () => api.post(`/restaurant/orders/${selectedOrderId}/send`, { targets: ['KITCHEN', 'CASHIER'] }),
+    onSuccess: (res) => {
+      toast.success(res?.data?.message || 'Pedido enviado a cocina y caja');
+      invalidateRestaurant();
+      refetchAccount();
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo enviar pedido'),
   });
 
   const updateItemMutation = useMutation({
@@ -259,6 +330,7 @@ export default function RestaurantPage() {
       api.post(`/restaurant/orders/${selectedOrderId}/pay`, {
         paymentMethod,
         mode: 'FULL',
+        tipAmount: Number(tipAmount || 0),
       }),
     onSuccess: () => {
       toast.success('Cobro registrado');
@@ -279,6 +351,7 @@ export default function RestaurantPage() {
         paymentMethod,
         mode: 'CUSTOM',
         items,
+        tipAmount: Number(tipAmount || 0),
       });
     },
     onSuccess: () => {
@@ -359,6 +432,15 @@ export default function RestaurantPage() {
     onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo sentar reserva'),
   });
 
+  const updateServiceRequestStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED' }) =>
+      api.put(`/restaurant/service-requests/${id}/status`, { status }),
+    onSuccess: () => {
+      invalidateRestaurant();
+    },
+    onError: (error: any) => toast.error(error?.response?.data?.message || 'No se pudo actualizar solicitud'),
+  });
+
   const selectedTable = useMemo(
     () => (tables || []).find((table: any) => table.id === selectedTableId),
     [tables, selectedTableId],
@@ -409,7 +491,7 @@ export default function RestaurantPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Operación Restaurante</h1>
-          <p className="mt-1 text-sm text-slate-500">Salón, reservas, KDS, cuenta y cobro por rol.</p>
+          <p className="mt-1 text-sm text-slate-500">Salón, reservas, KDS (Kitchen Display System), cuenta y cobro por rol.</p>
         </div>
         <div className="flex gap-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-sm">
           <button
@@ -428,7 +510,19 @@ export default function RestaurantPage() {
             onClick={() => setActiveTab('kds')}
             className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'kds' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
           >
-            KDS
+            KDS (Kitchen Display System)
+          </button>
+          <button
+            onClick={() => setActiveTab('pedidos')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'pedidos' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Pedidos
+          </button>
+          <button
+            onClick={() => setActiveTab('cliente')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${activeTab === 'cliente' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Cliente QR
           </button>
         </div>
       </div>
@@ -437,8 +531,8 @@ export default function RestaurantPage() {
         <SummaryCard label="Mesas Disponibles" value={`${availableCount}`} icon={<CheckCircle className="h-5 w-5" />} tone="bg-emerald-50 text-emerald-700" />
         <SummaryCard label="Mesas Ocupadas" value={`${occupiedCount}`} icon={<Users className="h-5 w-5" />} tone="bg-rose-50 text-rose-700" />
         <SummaryCard
-          label="Reservadas / Pendiente pago"
-          value={`${Number(dashboard?.tables?.reserved || 0)} / ${Number(dashboard?.tables?.pendingPayment || 0)}`}
+          label="Reservadas / Pend. pago / Llamados"
+          value={`${Number(dashboard?.tables?.reserved || 0)} / ${Number(dashboard?.tables?.pendingPayment || 0)} / ${Number(dashboard?.serviceRequests?.pending || 0)}`}
           icon={<Utensils className="h-5 w-5" />}
           tone="bg-blue-50 text-blue-700"
         />
@@ -449,6 +543,35 @@ export default function RestaurantPage() {
           tone="bg-slate-100 text-slate-700"
         />
       </div>
+
+      {['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER'].includes(role) && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Propina sugerida (%)</p>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step="0.5"
+                value={tipSuggestionPercentInput}
+                onChange={(e) => setTipSuggestionPercentInput(e.target.value)}
+                className="mt-1 w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              onClick={() => updateTipSuggestionMutation.mutate()}
+              disabled={updateTipSuggestionMutation.isPending}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              Guardar propina sugerida
+            </button>
+            <p className="text-xs text-slate-500">
+              Valor actual: {Number(dashboard?.settings?.tipSuggestionPercent || 10)}%
+            </p>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'salon' && canManageTables && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -671,6 +794,9 @@ export default function RestaurantPage() {
                             <p className="text-xs text-slate-500">
                               Qty: {line.quantity} | Pagado: {line.paidQuantity} | Pendiente: {line.remainingQuantity}
                             </p>
+                            <p className="text-[11px] text-slate-500">
+                              {line.sentToKitchen ? 'Enviado a cocina' : 'Borrador sin enviar'}
+                            </p>
                           </div>
                           <div className="text-right">
                             <p className="text-sm font-bold text-slate-900">${Number(line.subtotal).toLocaleString('es-CL')}</p>
@@ -731,12 +857,38 @@ export default function RestaurantPage() {
                   </div>
 
                   <div className="space-y-1 border-t border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                    <p>Estado envio: <strong>{account.order?.sentToKitchen ? 'Enviado a cocina' : 'Pendiente de envio'}</strong></p>
                     <p>Subtotal: <strong>${Number(account.totals.subtotal).toLocaleString('es-CL')}</strong></p>
                     <p>Total cuenta: <strong>${Number(account.totals.total).toLocaleString('es-CL')}</strong></p>
                     <p>Total pagado: <strong>${Number(account.totals.paidTotal).toLocaleString('es-CL')}</strong></p>
                     <p className="text-base">Saldo pendiente: <strong>${Number(account.totals.remainingTotal).toLocaleString('es-CL')}</strong></p>
+                    <p>
+                      Propina sugerida ({Number(account.totals.tipSuggestionPercent || 10)}%):
+                      <strong> ${Number(account.totals.suggestedTipOnRemaining || 0).toLocaleString('es-CL')}</strong>
+                    </p>
                   </div>
                 </div>
+
+                {canOperateOrder && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase text-amber-800">
+                      <SendHorizontal className="h-3.5 w-3.5" />
+                      Envio de comanda
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => sendOrderMutation.mutate()}
+                        disabled={sendOrderMutation.isPending}
+                        className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                      >
+                        Enviar pedido a cocina y caja
+                      </button>
+                      <span className="text-xs text-amber-900">
+                        Los items en borrador no entran al KDS (Kitchen Display System) ni se pueden cobrar hasta enviar.
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {canCashier && (
                   <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3">
@@ -744,6 +896,11 @@ export default function RestaurantPage() {
                       <Receipt className="h-3.5 w-3.5" />
                       Cobro por cajero
                     </div>
+                    {!account.order?.sentToCashier && (
+                      <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                        Debes enviar la comanda a caja antes de registrar cobros.
+                      </div>
+                    )}
                     <div className="grid gap-2 md:grid-cols-3">
                       <select
                         value={paymentMethod}
@@ -759,7 +916,11 @@ export default function RestaurantPage() {
 
                       <button
                         onClick={() => payFullMutation.mutate()}
-                        disabled={Number(account.totals.remainingTotal || 0) <= 0 || payFullMutation.isPending}
+                        disabled={
+                          Number(account.totals.remainingTotal || 0) <= 0 ||
+                          payFullMutation.isPending ||
+                          !account.order?.sentToCashier
+                        }
                         className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                       >
                         Cobrar total
@@ -769,7 +930,8 @@ export default function RestaurantPage() {
                         onClick={() => payCustomMutation.mutate()}
                         disabled={
                           Object.values(customSplit).reduce((sum, qty) => sum + Number(qty || 0), 0) <= 0 ||
-                          payCustomMutation.isPending
+                          payCustomMutation.isPending ||
+                          !account.order?.sentToCashier
                         }
                         className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
                       >
@@ -778,6 +940,26 @@ export default function RestaurantPage() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={tipAmount}
+                        onChange={(e) => setTipAmount(e.target.value)}
+                        className="w-36 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="Propina"
+                      />
+                      <button
+                        onClick={() => setTipAmount(String(Number(account.totals.suggestedTipOnRemaining || 0)))}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                      >
+                        Usar sugerida
+                      </button>
+                      <button
+                        onClick={() => setTipAmount('0')}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                      >
+                        Sin propina
+                      </button>
                       <input
                         type="number"
                         min={2}
@@ -978,7 +1160,7 @@ export default function RestaurantPage() {
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-lg font-bold text-slate-900">KDS Cocina</h2>
+              <h2 className="text-lg font-bold text-slate-900">KDS (Kitchen Display System) Cocina</h2>
               <input
                 type="number"
                 min={0}
@@ -1036,6 +1218,133 @@ export default function RestaurantPage() {
               No hay items en cola con este filtro.
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === 'pedidos' && (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-5">
+            <SummaryCard label="Total activos" value={`${Number(ordersBoard?.summary?.total || 0)}`} icon={<Receipt className="h-4 w-4" />} tone="bg-slate-100 text-slate-700" />
+            <SummaryCard label="Pendientes" value={`${Number(ordersBoard?.summary?.pendingOrders || 0)}`} icon={<Clock className="h-4 w-4" />} tone="bg-amber-50 text-amber-700" />
+            <SummaryCard label="Preparando" value={`${Number(ordersBoard?.summary?.preparingOrders || 0)}`} icon={<Soup className="h-4 w-4" />} tone="bg-blue-50 text-blue-700" />
+            <SummaryCard label="Listos" value={`${Number(ordersBoard?.summary?.readyOrders || 0)}`} icon={<CheckCircle className="h-4 w-4" />} tone="bg-emerald-50 text-emerald-700" />
+            <SummaryCard label="Con llamados" value={`${Number(ordersBoard?.summary?.pendingServiceRequests || 0)}`} icon={<BellRing className="h-4 w-4" />} tone="bg-rose-50 text-rose-700" />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {(ordersBoard?.orders || []).map((order: any) => (
+              <div key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="font-bold text-slate-900">
+                      {order.orderNumber} - Mesa {order.table?.number || '-'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Estado: {ORDER_STATUS_LABELS[order.status] || order.status} | Espera: {order.waitMinutes} min
+                    </p>
+                  </div>
+                  <div className="text-right text-xs">
+                    <p className={order.sentToKitchen ? 'text-emerald-700' : 'text-amber-700'}>
+                      {order.sentToKitchen ? 'Enviado cocina' : 'Pendiente cocina'}
+                    </p>
+                    <p className={order.sentToCashier ? 'text-emerald-700' : 'text-amber-700'}>
+                      {order.sentToCashier ? 'Enviado caja' : 'Pendiente caja'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-2 text-xs md:grid-cols-5">
+                  <StatPill label="Pend." value={`${order.metrics?.pending || 0}`} />
+                  <StatPill label="Prep." value={`${order.metrics?.preparing || 0}`} />
+                  <StatPill label="Listos" value={`${order.metrics?.ready || 0}`} />
+                  <StatPill label="Borrador" value={`${order.metrics?.draft || 0}`} />
+                  <StatPill label="Llamados" value={`${(order.serviceRequests || []).length}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {(ordersBoard?.orders || []).length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+              No hay pedidos activos para mostrar.
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'cliente' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900">Solicitudes de clientes por QR</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Consulta este panel para atender llamados de mesa (consulta o solicitud de cuenta).
+            </p>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {(serviceRequests || []).map((request: any) => (
+              <div key={request.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold text-slate-900">
+                      Mesa {request.table?.number || '-'} - {request.type === 'BILL' ? 'Solicita cuenta' : 'Consulta'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {new Date(request.requestedAt).toLocaleString('es-CL')} {request.order?.orderNumber ? `| ${request.order.orderNumber}` : ''}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+                    {request.status}
+                  </span>
+                </div>
+                {request.message && (
+                  <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700">
+                    {request.message}
+                  </p>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => updateServiceRequestStatusMutation.mutate({ id: request.id, status: 'ACKNOWLEDGED' })}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Tomar solicitud
+                  </button>
+                  <button
+                    onClick={() => updateServiceRequestStatusMutation.mutate({ id: request.id, status: 'RESOLVED' })}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500"
+                  >
+                    Resolver
+                  </button>
+                  <button
+                    onClick={() => updateServiceRequestStatusMutation.mutate({ id: request.id, status: 'CANCELLED' })}
+                    className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {(serviceRequests || []).length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+              Sin solicitudes pendientes de clientes.
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-indigo-700">Links QR por mesa</h3>
+            <p className="mt-1 text-xs text-indigo-700">
+              Entrega este enlace como QR al cliente para que vea carta, estado y llame al garzon.
+            </p>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              {(tables || []).map((table: any) => (
+                <div key={table.id} className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs text-slate-700">
+                  Mesa {table.number}: <span className="font-mono">/cliente/{table.qrToken}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

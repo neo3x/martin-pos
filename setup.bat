@@ -54,6 +54,26 @@ goto menu
 echo.
 echo [INFO] Construyendo e iniciando servicios...
 %DOCKER_COMPOSE% -f %COMPOSE_FILE% up -d --build
+if errorlevel 1 (
+  echo [ERROR] Fallo la construccion o el inicio de servicios.
+  echo.
+  set "showLogsErr="
+  set /p showLogsErr="Deseas ver logs de eventos? (S/N): "
+  if /I "!showLogsErr!"=="S" (
+    %DOCKER_COMPOSE% -f %COMPOSE_FILE% logs -f
+  )
+  echo.
+  pause
+  goto menu
+)
+echo.
+choice /c SN /n /m "Deseas ver logs de eventos? (S/N): "
+if errorlevel 2 goto build_done
+if errorlevel 1 (
+  %DOCKER_COMPOSE% -f %COMPOSE_FILE% logs -f
+)
+
+:build_done
 echo.
 pause
 goto menu

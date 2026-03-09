@@ -29,9 +29,9 @@ const MODULE_WIDGETS: Record<
 > = {
   RESTAURANT: {
     title: 'Operacion de salon, cocina y caja restaurante',
-    description: 'Gestion de mesas, reservas, KDS, pre-cuenta y cobro desde flujo restaurante.',
+    description: 'Gestion de mesas, reservas, KDS (Kitchen Display System), pre-cuenta y cobro desde flujo restaurante.',
     links: [
-      { label: 'Salon, reservas y KDS', href: '/dashboard/restaurant' },
+      { label: 'Salon, reservas y KDS (Kitchen Display System)', href: '/dashboard/restaurant' },
       { label: 'Cobros y caja', href: '/dashboard/cash-register' },
       { label: 'Reporte operativo', href: '/dashboard/reports' },
     ],

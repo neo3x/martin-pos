@@ -28,6 +28,14 @@ export class RestaurantController {
     return this.restaurantService.getDashboard(req.user.branchId);
   }
 
+  @Put('settings/tip-suggestion')
+  updateTipSuggestion(
+    @Request() req,
+    @Body() data: { percent: number },
+  ) {
+    return this.restaurantService.updateTipSuggestion(req.user.branchId, Number(data.percent));
+  }
+
   @Get('kds')
   getKitchenQueue(@Request() req, @Query('minWait') minWait?: string) {
     return this.restaurantService.getKitchenQueue(req.user.branchId, minWait ? Number(minWait) : 0);
@@ -137,6 +145,11 @@ export class RestaurantController {
     return this.restaurantService.getOrders(req.user.branchId, status);
   }
 
+  @Get('orders-board')
+  getOrdersBoard(@Request() req, @Query('status') status?: string) {
+    return this.restaurantService.getOrdersBoard(req.user.branchId, status);
+  }
+
   @Get('orders/:id/account')
   getOrderAccount(@Request() req, @Param('id') orderId: string) {
     return this.restaurantService.getOrderAccount(orderId, req.user.branchId);
@@ -149,6 +162,15 @@ export class RestaurantController {
     @Body() data: { items: Array<{ productId: string; quantity: number; notes?: string }> },
   ) {
     return this.restaurantService.addOrderItems(orderId, req.user.branchId, data);
+  }
+
+  @Post('orders/:id/send')
+  sendOrder(
+    @Request() req,
+    @Param('id') orderId: string,
+    @Body() data?: { targets?: Array<'KITCHEN' | 'CASHIER'> },
+  ) {
+    return this.restaurantService.sendOrder(orderId, req.user.branchId, req.user.id, data?.targets);
   }
 
   @Put('orders/:id/items/:itemId')
@@ -207,6 +229,8 @@ export class RestaurantController {
       notes?: string;
       mode?: 'FULL' | 'CUSTOM';
       items?: Array<{ orderItemId: string; quantity: number }>;
+      tipAmount?: number;
+      tipPaymentMethod?: 'CASH' | 'CARD' | 'CARD_POS' | 'CARD_WEBPAY' | 'TRANSFER' | 'QR' | 'CREDIT' | 'MIXED';
     },
   ) {
     return this.restaurantService.payOrder(orderId, req.user.branchId, {
@@ -227,6 +251,28 @@ export class RestaurantController {
     @Body() data: { status: string },
   ) {
     return this.restaurantService.updateOrderStatus(orderId, req.user.branchId, data.status);
+  }
+
+  @Get('service-requests')
+  getServiceRequests(
+    @Request() req,
+    @Query('status') status?: 'PENDING' | 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED',
+  ) {
+    return this.restaurantService.getServiceRequests(req.user.branchId, status);
+  }
+
+  @Put('service-requests/:id/status')
+  updateServiceRequestStatus(
+    @Request() req,
+    @Param('id') requestId: string,
+    @Body() data: { status: 'ACKNOWLEDGED' | 'RESOLVED' | 'CANCELLED' },
+  ) {
+    return this.restaurantService.updateServiceRequestStatus(
+      requestId,
+      req.user.branchId,
+      req.user.id,
+      data.status,
+    );
   }
 }
 

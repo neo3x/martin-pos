@@ -19,10 +19,12 @@ import { OmniPuntoLogo } from '@/components/brand/omnipunto-logo';
 
 const platformFeatures = [
   'Ventas, caja e historial en tiempo real',
-  'Inventario, alertas de stock y vencimientos',
+  'Apertura/cierre de caja, movimientos y trazabilidad por empleado',
+  'Pagos multiples, comprobantes y estados de venta/cuenta claros',
+  'Inventario, alertas de stock y ajustes operativos',
   'Clientes, fidelizacion y reportes comerciales',
   'Usuarios, roles y multi-sucursal',
-  'Promociones y automatizaciones por rubro',
+  'Demo navegable por perfil con permisos reales',
   'Integraciones y IA asistiva operativa',
 ];
 
@@ -76,7 +78,7 @@ export default function HomePage() {
         <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 lg:px-10">
           <div className="flex items-center gap-3">
             <OmniPuntoLogo showSlogan />
-            <span className="text-sm font-medium text-slate-600">SaaS Multi-Modulo</span>
+            <span className="text-sm font-medium text-slate-600">SaaS POS Multi-Modulo</span>
           </div>
           <div className="flex items-center gap-3">
             <Link href="/login" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-white">
@@ -92,13 +94,13 @@ export default function HomePage() {
           <div className="space-y-7">
             <div className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600 shadow-sm">
               <Sparkles className="h-4 w-4 text-indigo-600" />
-              Plataforma POS lista para venderse
+              OmniPunto para comercios de alto flujo
             </div>
             <h1 className="max-w-3xl text-4xl font-black leading-tight text-slate-900 lg:text-6xl">
-              Opera tu negocio con un POS modular, elegante y realmente comercial.
+              OmniPunto: la plataforma que se adapta a tu negocio.
             </h1>
             <p className="max-w-2xl text-lg text-slate-600">
-              OmniPunto conecta ventas, inventario, clientes y analitica con experiencias operativas especializadas para cada rubro.
+              Unifica ventas, inventario, clientes y analitica con flujos operativos reales para restaurante, minimarket, botilleria y libreria.
             </p>
             <div className="flex flex-wrap gap-3">
               <Link href="/demo" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500">
@@ -141,7 +143,10 @@ export default function HomePage() {
         <div className="mb-8 flex items-end justify-between gap-6">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-indigo-600">Capacidades</p>
-            <h2 className="text-3xl font-black lg:text-4xl">Todo lo necesario para operar y crecer</h2>
+            <h2 className="text-3xl font-black lg:text-4xl">Capacidades comunes en todos los modulos</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Las capacidades especificas por rubro se detallan en la seccion de modulos.
+            </p>
           </div>
           <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 lg:flex">
             <ShieldCheck className="h-4 w-4 text-green-600" />
@@ -279,7 +284,7 @@ export default function HomePage() {
         <div className="mx-auto grid w-full max-w-7xl gap-8 px-6 py-10 text-sm lg:grid-cols-5 lg:px-10">
           <div className="lg:col-span-2">
             <p className="text-lg font-bold">OmniPunto</p>
-            <p className="mt-2 text-slate-600">Plataforma POS modular para negocios que quieren operar y vender mejor.</p>
+            <p className="mt-2 text-slate-600">La plataforma que se adapta a tu negocio.</p>
           </div>
           <div>
             <p className="mb-2 font-semibold">Producto</p>
@@ -302,7 +307,7 @@ export default function HomePage() {
             <ul className="space-y-1 text-slate-600">
               <li>ventas@omnipunto.cl</li>
               <li>+56 9 5555 5555</li>
-              <li>Santiago, Chile</li>
+              <li>Operacion regional</li>
             </ul>
           </div>
         </div>
