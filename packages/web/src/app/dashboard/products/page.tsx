@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Package, Plus, Search } from 'lucide-react';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
+import { formatCurrencyInt } from '@/lib/number-format';
 
 type ProductForm = {
   name: string;
@@ -173,7 +174,7 @@ export default function ProductsPage() {
               </div>
 
               <div className="space-y-1 text-sm text-slate-600">
-                <p className="text-2xl font-black text-slate-900">${Number(product.price).toLocaleString('es-CL')}</p>
+                <p className="text-2xl font-black text-slate-900">{formatCurrencyInt(product.price)}</p>
                 <p>Stock: {Number(product.stock)} {product.unit}</p>
                 <p>Minimo: {Number(product.minStock)}</p>
               </div>
@@ -314,8 +315,8 @@ export default function ProductsPage() {
               <Package className="h-5 w-5 text-slate-500" />
             </div>
             <div className="space-y-2 text-sm text-slate-700">
-              <p><strong>Precio:</strong> ${Number(viewProduct.price).toLocaleString('es-CL')}</p>
-              <p><strong>Costo:</strong> ${Number(viewProduct.costPrice).toLocaleString('es-CL')}</p>
+              <p><strong>Precio:</strong> {formatCurrencyInt(viewProduct.price)}</p>
+              <p><strong>Costo:</strong> {formatCurrencyInt(viewProduct.costPrice)}</p>
               <p><strong>Stock:</strong> {Number(viewProduct.stock)} {viewProduct.unit}</p>
               <p><strong>Minimo:</strong> {Number(viewProduct.minStock)}</p>
               <p><strong>Categoria:</strong> {viewProduct.category?.name || '-'}</p>

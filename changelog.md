@@ -55,3 +55,27 @@ Fecha de actualizacion manual: **2026-03-09**
   - `ROLE_ACCESS_MATRIX.md`
   - `KDS_STANDALONE.md`
   - `CASH_TIPS_FLOW.md`
+- Iteracion tecnica 2026-03-09 (pendiente de commit):
+  - Impuestos configurables por sucursal (`taxName`, `taxRatePercent`, `taxEnabled`, `pricesIncludeTax`) aplicados en ventas y cuenta restaurante.
+  - Nueva administracion de API keys IA (OpenAI/Claude) con cifrado backend y visualizacion enmascarada.
+  - Endpoints de settings protegidos por rol (`SUPER_ADMIN`, `ADMIN`, `MANAGER`) con `RolesGuard`.
+  - KDS mejorado en embebido y standalone:
+    - tema claro/oscuro
+    - cambio de estado por botones
+    - ETA por item con keypad numerico
+  - Propinas restringidas al modulo restaurante en flujo de pago y visibilidad de caja.
+  - Formato monetario visible en enteros en paginas clave (`sales`, `restaurant`, `cash-register`, `reports`, `dashboard`, `products`, `invoices`, `cliente`).
+  - Prisma/schema:
+    - nuevo campo `estimatedPrepMinutes` en `order_items`
+    - nuevo modelo `AIProviderKey` y enum `AIProvider`
+    - migracion `202603090004_settings_ai_keys_kds_eta`
+  - Validaciones ejecutadas:
+    - `pnpm --filter @martin-pos/database prisma:generate` OK
+    - `prisma validate` OK
+    - `pnpm --filter @martin-pos/backend build` OK
+    - `pnpm --filter @martin-pos/web build` OK
+  - Documentacion nueva:
+    - `TAX_CONFIGURATION.md`
+    - `AI_KEYS_SETTINGS.md`
+    - `KDS_CONFIGURATION.md`
+    - `TIPS_MODULE_RULES.md`

@@ -29,18 +29,72 @@ export class RestaurantService {
     return actor?.role === WAITER_ROLE;
   }
 
-  private async getBranchTaxRate(branchId: string) {
+  private resolveBranchTaxConfig(config: any) {
+    const taxRatePercentRaw = Number(
+      config?.taxRatePercent !== undefined
+        ? config.taxRatePercent
+        : Number(config?.taxRate) <= 1
+          ? Number(config?.taxRate || 0.19) * 100
+          : Number(config?.taxRate || 19),
+    );
+    const taxRatePercent = Math.min(100, Math.max(0, Number.isFinite(taxRatePercentRaw) ? taxRatePercentRaw : 19));
+    const taxRate = taxRatePercent / 100;
+    const taxEnabled = config?.taxEnabled !== undefined ? Boolean(config.taxEnabled) : true;
+    const pricesIncludeTax = config?.pricesIncludeTax !== undefined ? Boolean(config.pricesIncludeTax) : false;
+    const taxName = String(config?.taxName || 'IVA');
+    return {
+      taxName,
+      taxRate,
+      taxRatePercent,
+      taxEnabled,
+      pricesIncludeTax,
+    };
+  }
+
+  private async getBranchTaxConfig(branchId: string) {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
       select: { config: true },
     });
-    return Number((branch?.config as any)?.taxRate || 0.19);
+    return this.resolveBranchTaxConfig((branch?.config as any) || {});
+  }
+
+  private async getBranchKdsConfig(branchId: string) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { config: true },
+    });
+    const config = (branch?.config as any) || {};
+    const defaultPrepMinutes = Math.max(1, Math.round(Number(config?.kdsDefaultPrepMinutes || 15)));
+    const warningMinutes = Math.max(1, Math.round(Number(config?.kdsWarningMinutes || 20)));
+    const criticalMinutes = Math.max(warningMinutes + 1, Math.round(Number(config?.kdsCriticalMinutes || 30)));
+    return {
+      defaultPrepMinutes,
+      warningMinutes,
+      criticalMinutes,
+      theme: config?.kdsTheme === 'light' ? 'light' : 'dark',
+    };
+  }
+
+  private async isTipsEnabled(branchId: string) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
+      select: { moduleType: true, config: true },
+    });
+    if (!branch) return false;
+    const moduleAllows = branch.moduleType === 'RESTAURANT' || branch.moduleType === 'ALL';
+    const tipsEnabled = (branch.config as any)?.tipsEnabled;
+    return moduleAllows && (tipsEnabled === undefined ? true : Boolean(tipsEnabled));
   }
 
   private normalizeTipPercent(raw: number) {
     const parsed = Number(raw);
     if (!Number.isFinite(parsed)) return 10;
     return Math.min(100, Math.max(0, Math.round(parsed * 100) / 100));
+  }
+
+  private roundMoney(value: number) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
   }
 
   private async getBranchTipSuggestionPercent(branchId: string) {
@@ -580,6 +634,7 @@ export class RestaurantService {
   }
 
   async getKitchenQueue(branchId: string, minWaitMinutes = 0) {
+    const kdsConfig = await this.getBranchKdsConfig(branchId);
     const orders = await this.prisma.order.findMany({
       where: {
         branchId,
@@ -624,10 +679,18 @@ export class RestaurantService {
         const now = Date.now();
         const oldestItem = order.items[0];
         const waitMinutes = oldestItem
-          ? Math.max(0, Math.floor((now - new Date(oldestItem.createdAt).getTime()) / (1000 * 60)))
+          ? Math.max(
+              0,
+              Math.floor((now - new Date(oldestItem.sentAt || oldestItem.createdAt).getTime()) / (1000 * 60)),
+            )
           : 0;
 
-        const alertLevel = waitMinutes >= 30 ? 'CRITICAL' : waitMinutes >= 20 ? 'WARNING' : 'NORMAL';
+        const alertLevel =
+          waitMinutes >= kdsConfig.criticalMinutes
+            ? 'CRITICAL'
+            : waitMinutes >= kdsConfig.warningMinutes
+              ? 'WARNING'
+              : 'NORMAL';
 
         return {
           id: order.id,
@@ -647,10 +710,16 @@ export class RestaurantService {
             status: item.status,
             notes: item.notes,
             sentAt: item.sentAt,
+            estimatedPrepMinutes: Number(item.estimatedPrepMinutes || kdsConfig.defaultPrepMinutes),
             waitMinutes: Math.max(
               0,
-              Math.floor((now - new Date(item.createdAt).getTime()) / (1000 * 60)),
+              Math.floor((now - new Date(item.sentAt || item.createdAt).getTime()) / (1000 * 60)),
             ),
+            isOverdue:
+              Math.max(
+                0,
+                Math.floor((now - new Date(item.sentAt || item.createdAt).getTime()) / (1000 * 60)),
+              ) >= Number(item.estimatedPrepMinutes || kdsConfig.defaultPrepMinutes),
           })),
         };
       })
@@ -663,7 +732,7 @@ export class RestaurantService {
           if (item.status === 'PENDING') acc.pending += 1;
           if (item.status === 'PREPARING') acc.preparing += 1;
           if (item.status === 'READY') acc.ready += 1;
-          if (item.waitMinutes >= 20) acc.overdue += 1;
+          if (item.isOverdue) acc.overdue += 1;
           acc.totalItems += 1;
         }
         return acc;
@@ -674,6 +743,7 @@ export class RestaurantService {
     return {
       queue,
       summary,
+      settings: kdsConfig,
     };
   }
 
@@ -1220,6 +1290,7 @@ export class RestaurantService {
     actor?: RestaurantActor,
   ) {
     const order = await this.ensureOrder(orderId, branchId, actor);
+    const kdsConfig = await this.getBranchKdsConfig(branchId);
 
     if (!ACTIVE_ORDER_STATUSES.includes(order.status)) {
       throw new BadRequestException('No se puede editar un pedido cerrado o cancelado');
@@ -1255,6 +1326,7 @@ export class RestaurantService {
             quantity: item.quantity,
             unitPrice: product.price,
             paidQuantity: 0,
+            estimatedPrepMinutes: kdsConfig.defaultPrepMinutes,
             notes: item.notes,
             status: 'PENDING',
             sentToKitchen: false,
@@ -1361,6 +1433,7 @@ export class RestaurantService {
       quantity?: number;
       notes?: string;
       status?: string;
+      estimatedPrepMinutes?: number;
     },
     actor?: RestaurantActor,
   ) {
@@ -1378,6 +1451,9 @@ export class RestaurantService {
     if (data.quantity !== undefined && data.quantity < Number(item.paidQuantity)) {
       throw new BadRequestException('La cantidad no puede ser menor a lo ya cobrado');
     }
+    if (data.estimatedPrepMinutes !== undefined && (!Number.isInteger(data.estimatedPrepMinutes) || data.estimatedPrepMinutes < 1)) {
+      throw new BadRequestException('Tiempo estimado invalido');
+    }
 
     await this.prisma.orderItem.update({
       where: { id: item.id },
@@ -1385,6 +1461,7 @@ export class RestaurantService {
         ...(data.quantity !== undefined ? { quantity: data.quantity } : {}),
         ...(data.notes !== undefined ? { notes: data.notes } : {}),
         ...(data.status !== undefined ? { status: data.status as any } : {}),
+        ...(data.estimatedPrepMinutes !== undefined ? { estimatedPrepMinutes: data.estimatedPrepMinutes } : {}),
         ...(data.status !== undefined && !item.sentToKitchen ? { sentToKitchen: true, sentAt: new Date() } : {}),
       },
     });
@@ -1572,6 +1649,10 @@ export class RestaurantService {
     });
 
     const tipAmount = Math.max(0, Math.round(Number(payload.tipAmount || 0)));
+    const tipsEnabled = await this.isTipsEnabled(branchId);
+    if (tipAmount > 0 && !tipsEnabled) {
+      throw new BadRequestException('La propina solo esta disponible para modulo restaurante');
+    }
 
     const sale = await this.salesService.create(
       {
@@ -2156,7 +2237,7 @@ export class RestaurantService {
 
   async getOrderAccount(orderId: string, branchId: string, actor?: RestaurantActor) {
     const order = await this.ensureOrder(orderId, branchId, actor);
-    const taxRate = await this.getBranchTaxRate(branchId);
+    const taxConfig = await this.getBranchTaxConfig(branchId);
     const tipSuggestionPercent = await this.getBranchTipSuggestionPercent(branchId);
 
     const lines = order.items.map((item) => {
@@ -2187,16 +2268,50 @@ export class RestaurantService {
       };
     });
 
-    const subtotal = lines.reduce((sum, line) => sum + line.subtotal, 0);
-    const paidSubtotal = lines.reduce((sum, line) => sum + line.paidSubtotal, 0);
-    const remainingSubtotal = lines.reduce((sum, line) => sum + line.remainingSubtotal, 0);
+    const grossSubtotal = lines.reduce((sum, line) => sum + line.subtotal, 0);
+    const grossPaidSubtotal = lines.reduce((sum, line) => sum + line.paidSubtotal, 0);
+    const grossRemainingSubtotal = lines.reduce((sum, line) => sum + line.remainingSubtotal, 0);
 
-    const tax = Math.round(subtotal * taxRate);
-    const paidTax = Math.round(paidSubtotal * taxRate);
-    const remainingTax = Math.round(remainingSubtotal * taxRate);
+    const computeTaxBreakdown = (gross: number) => {
+      if (!taxConfig.taxEnabled || taxConfig.taxRate <= 0) {
+        return {
+          subtotal: this.roundMoney(gross),
+          tax: 0,
+          total: this.roundMoney(gross),
+        };
+      }
 
-    const total = subtotal + tax;
-    const paidTotal = paidSubtotal + paidTax;
+      if (taxConfig.pricesIncludeTax) {
+        const net = this.roundMoney(gross / (1 + taxConfig.taxRate));
+        const tax = this.roundMoney(gross - net);
+        return {
+          subtotal: net,
+          tax,
+          total: this.roundMoney(gross),
+        };
+      }
+
+      const net = this.roundMoney(gross);
+      const tax = this.roundMoney(net * taxConfig.taxRate);
+      return {
+        subtotal: net,
+        tax,
+        total: this.roundMoney(net + tax),
+      };
+    };
+
+    const totalsBreakdown = computeTaxBreakdown(grossSubtotal);
+    const paidBreakdown = computeTaxBreakdown(grossPaidSubtotal);
+    const remainingBreakdown = computeTaxBreakdown(grossRemainingSubtotal);
+
+    const subtotal = totalsBreakdown.subtotal;
+    const paidSubtotal = paidBreakdown.subtotal;
+    const remainingSubtotal = remainingBreakdown.subtotal;
+    const tax = totalsBreakdown.tax;
+    const paidTax = paidBreakdown.tax;
+    const remainingTax = remainingBreakdown.tax;
+    const total = totalsBreakdown.total;
+    const paidTotal = paidBreakdown.total;
     const remainingTotal = Math.max(0, total - paidTotal);
     const suggestedTipOnTotal = Math.round((total * tipSuggestionPercent) / 100);
     const suggestedTipOnRemaining = Math.round((remainingTotal * tipSuggestionPercent) / 100);
@@ -2249,7 +2364,11 @@ export class RestaurantService {
       lines,
       payments,
       totals: {
-        taxRate,
+        taxName: taxConfig.taxName,
+        taxRate: taxConfig.taxRate,
+        taxRatePercent: taxConfig.taxRatePercent,
+        taxEnabled: taxConfig.taxEnabled,
+        pricesIncludeTax: taxConfig.pricesIncludeTax,
         subtotal,
         tax,
         total,

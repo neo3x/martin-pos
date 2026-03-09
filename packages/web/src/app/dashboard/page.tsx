@@ -24,6 +24,7 @@ import { api } from '@/lib/api';
 import { MODULES } from '@/lib/modules';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
 import { canViewExecutiveDashboard, resolveRoleLandingPath } from '@/lib/role-access';
+import { formatCurrencyInt } from '@/lib/number-format';
 
 const MODULE_WIDGETS: Record<
   Exclude<BusinessModule, 'ALL'>,
@@ -135,8 +136,8 @@ export default function DashboardPage() {
         },
         {
           title: 'Ventas del dia',
-          value: `$${Number(moduleOverview?.sales?.amount || 0).toLocaleString('es-CL')}`,
-          subtitle: `Ticket prom.: $${Math.round(Number(moduleOverview?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`,
+          value: formatCurrencyInt(moduleOverview?.sales?.amount || 0),
+          subtitle: `Ticket prom.: ${formatCurrencyInt(moduleOverview?.sales?.averageTicket || 0)}`,
           icon: <DollarSign className="h-5 w-5" />,
           tone: 'bg-emerald-50 text-emerald-700',
         },
@@ -163,7 +164,7 @@ export default function DashboardPage() {
         {
           title: 'Ventas de hoy',
           value: `${Number(moduleOverview?.sales?.count || dailySales?.salesCount || 0)}`,
-          subtitle: `Ingresos: $${Number(moduleOverview?.sales?.amount || revenue).toLocaleString('es-CL')}`,
+          subtitle: `Ingresos: ${formatCurrencyInt(moduleOverview?.sales?.amount || revenue)}`,
           icon: <ShoppingCart className="h-5 w-5" />,
           tone: 'bg-emerald-50 text-emerald-700',
         },
@@ -184,7 +185,7 @@ export default function DashboardPage() {
         {
           title: 'Top cajero',
           value: topCashier?.name || 'Sin datos',
-          subtitle: topCashier ? `$${Number(topCashier.amount || 0).toLocaleString('es-CL')}` : 'Sin ventas hoy',
+          subtitle: topCashier ? formatCurrencyInt(topCashier.amount || 0) : 'Sin ventas hoy',
           icon: <Store className="h-5 w-5" />,
           tone: 'bg-indigo-50 text-indigo-700',
         },
@@ -196,14 +197,14 @@ export default function DashboardPage() {
       return [
         {
           title: 'Ventas del dia',
-          value: `$${Number(moduleOverview?.sales?.totalAmount || revenue).toLocaleString('es-CL')}`,
+          value: formatCurrencyInt(moduleOverview?.sales?.totalAmount || revenue),
           subtitle: `${Number(moduleOverview?.sales?.totalSales || dailySales?.salesCount || 0)} transacciones`,
           icon: <Wine className="h-5 w-5" />,
           tone: 'bg-red-50 text-red-700',
         },
         {
           title: 'Ticket promedio',
-          value: `$${Math.round(Number(moduleOverview?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`,
+          value: formatCurrencyInt(moduleOverview?.sales?.averageTicket || 0),
           subtitle: 'Comportamiento comercial',
           icon: <DollarSign className="h-5 w-5" />,
           tone: 'bg-amber-50 text-amber-700',
@@ -230,7 +231,7 @@ export default function DashboardPage() {
       return [
         {
           title: 'Ventas del dia',
-          value: `$${Number(moduleOverview?.sales?.amount || revenue).toLocaleString('es-CL')}`,
+          value: formatCurrencyInt(moduleOverview?.sales?.amount || revenue),
           subtitle: `${Number(moduleOverview?.sales?.count || dailySales?.salesCount || 0)} tickets`,
           icon: <BookOpen className="h-5 w-5" />,
           tone: 'bg-blue-50 text-blue-700',
@@ -238,7 +239,7 @@ export default function DashboardPage() {
         {
           title: 'Categoria lider',
           value: topCategory?.category || 'Sin datos',
-          subtitle: topCategory ? `$${Number(topCategory.revenue || 0).toLocaleString('es-CL')}` : 'Sin ventas',
+          subtitle: topCategory ? formatCurrencyInt(topCategory.revenue || 0) : 'Sin ventas',
           icon: <BarChart3 className="h-5 w-5" />,
           tone: 'bg-indigo-50 text-indigo-700',
         },
@@ -263,7 +264,7 @@ export default function DashboardPage() {
       {
         title: 'Ventas del dia',
         value: `${Number(dailySales?.salesCount || 0)}`,
-        subtitle: `Ingresos: $${Number(revenue).toLocaleString('es-CL')}`,
+        subtitle: `Ingresos: ${formatCurrencyInt(revenue)}`,
         icon: <ShoppingCart className="h-5 w-5" />,
         tone: 'bg-emerald-50 text-emerald-700',
       },

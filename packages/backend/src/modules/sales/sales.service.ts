@@ -9,7 +9,6 @@ import {
   ProductStatus,
   PaymentMethod,
 } from '@martin-pos/shared';
-import { calculateSaleTotal } from '@martin-pos/shared';
 
 @Injectable()
 export class SalesService {
@@ -26,6 +25,71 @@ export class SalesService {
     return this.selfScopeRoles.includes(String(role || '').toUpperCase());
   }
 
+  private resolveBranchTaxConfig(config: any) {
+    const taxRatePercentRaw = Number(
+      config?.taxRatePercent !== undefined
+        ? config.taxRatePercent
+        : Number(config?.taxRate) <= 1
+          ? Number(config?.taxRate || 0.19) * 100
+          : Number(config?.taxRate || 19),
+    );
+    const taxRatePercent = Math.min(100, Math.max(0, Number.isFinite(taxRatePercentRaw) ? taxRatePercentRaw : 19));
+    const taxRate = taxRatePercent / 100;
+    const taxEnabled = config?.taxEnabled !== undefined ? Boolean(config.taxEnabled) : true;
+    const pricesIncludeTax = config?.pricesIncludeTax !== undefined ? Boolean(config.pricesIncludeTax) : false;
+    const taxName = String(config?.taxName || 'IVA');
+
+    return {
+      taxName,
+      taxRatePercent,
+      taxRate,
+      taxEnabled,
+      pricesIncludeTax,
+    };
+  }
+
+  private roundMoney(value: number) {
+    return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+  }
+
+  private calculateSaleTotals(subtotal: number, discountAmount: number, taxConfig: {
+    taxRate: number;
+    taxEnabled: boolean;
+    pricesIncludeTax: boolean;
+  }) {
+    const discount = this.roundMoney(discountAmount);
+    const discountedGross = Math.max(0, this.roundMoney(subtotal - discount));
+
+    if (!taxConfig.taxEnabled || taxConfig.taxRate <= 0) {
+      return {
+        subtotal: discountedGross,
+        tax: 0,
+        discount,
+        total: discountedGross,
+      };
+    }
+
+    if (taxConfig.pricesIncludeTax) {
+      const net = this.roundMoney(discountedGross / (1 + taxConfig.taxRate));
+      const tax = this.roundMoney(discountedGross - net);
+      return {
+        subtotal: net,
+        tax,
+        discount,
+        total: discountedGross,
+      };
+    }
+
+    const net = discountedGross;
+    const tax = this.roundMoney(net * taxConfig.taxRate);
+    return {
+      subtotal: net,
+      tax,
+      discount,
+      total: this.roundMoney(net + tax),
+    };
+  }
+
   async create(data: ISaleCreate, userId: string, branchId: string) {
     // Generate sale number before transaction
     const lastSale = await this.prisma.sale.findFirst({
@@ -39,7 +103,7 @@ export class SalesService {
       where: { id: branchId },
       select: { moduleType: true, config: true },
     });
-    const taxRate = Number((branch?.config as any)?.taxRate || 0.19);
+    const taxConfig = this.resolveBranchTaxConfig((branch?.config as any) || {});
     const branchModule = branch?.moduleType;
 
     if (branchModule === 'BOTILLERIA') {
@@ -98,8 +162,14 @@ export class SalesService {
 
         const itemSubtotal = item.quantity * Number(item.unitPrice);
         const itemDiscount = Number(item.discount || 0);
-        const itemTax = product.taxable ? ((itemSubtotal - itemDiscount) * taxRate) : 0;
-        const itemTotal = itemSubtotal - itemDiscount + itemTax;
+        const taxableBase = Math.max(0, itemSubtotal - itemDiscount);
+        const itemTax =
+          product.taxable && taxConfig.taxEnabled
+            ? taxConfig.pricesIncludeTax
+              ? this.roundMoney(taxableBase - taxableBase / (1 + taxConfig.taxRate))
+              : this.roundMoney(taxableBase * taxConfig.taxRate)
+            : 0;
+        const itemTotal = taxConfig.pricesIncludeTax ? this.roundMoney(taxableBase) : this.roundMoney(taxableBase + itemTax);
         subtotal += itemSubtotal;
 
         saleItems.push({
@@ -120,7 +190,7 @@ export class SalesService {
       const requestedDiscount = Number(data.discount || 0);
       const promotionDiscount = this.calculatePromotionDiscount(promotion as any, saleItems, subtotal);
       const effectiveDiscount = requestedDiscount + autoBookstoreDiscount + promotionDiscount;
-      const totals = calculateSaleTotal(subtotal, taxRate, effectiveDiscount);
+      const totals = this.calculateSaleTotals(subtotal, effectiveDiscount, taxConfig);
 
       const paymentPlan = this.resolvePayments(data, Number(totals.total));
 

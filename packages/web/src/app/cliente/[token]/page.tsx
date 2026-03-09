@@ -6,6 +6,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { BellRing, ClipboardList, Receipt, RefreshCcw } from 'lucide-react';
 import { api } from '@/lib/api';
+import { formatCurrencyInt } from '@/lib/number-format';
 
 const ITEM_STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pendiente',
@@ -109,7 +110,7 @@ export default function CustomerQrPage() {
                             <p className="text-xs text-slate-500">{item.description || 'Sin descripcion'}</p>
                           </div>
                           <div className="text-right">
-                            <p className="font-bold text-slate-900">${Number(item.price).toLocaleString('es-CL')}</p>
+                            <p className="font-bold text-slate-900">{formatCurrencyInt(item.price)}</p>
                             <p className={`text-xs ${item.available ? 'text-emerald-700' : 'text-rose-700'}`}>
                               {item.available ? 'Disponible' : 'No disponible'}
                             </p>

@@ -31,6 +31,7 @@ import { LayawayModule } from './modules/layaway/layaway.module';
 import { PromotionsModule } from './modules/promotions/promotions.module';
 import { AdvancedAIModule } from './modules/advanced-ai/advanced-ai.module';
 import { FraudDetectionModule } from './modules/fraud-detection/fraud-detection.module';
+import { SettingsModule } from './modules/settings/settings.module';
 
 // BotillerÃ­a Module
 import { BotilleriaModule } from './modules/botilleria/botilleria.module';
@@ -85,6 +86,7 @@ import { HealthController } from './health.controller';
     PromotionsModule,
     AdvancedAIModule,
     FraudDetectionModule,
+    SettingsModule,
 
     // BotillerÃ­a
     BotilleriaModule,

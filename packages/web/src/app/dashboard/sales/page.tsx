@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { ShoppingCart, Plus, X, Search, ScanLine, User2, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/store/auth';
+import { formatCurrencyInt, toInteger } from '@/lib/number-format';
 
 const SELLER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'CASHIER', 'SELLER', 'WAITER'];
 
@@ -42,6 +43,11 @@ export default function SalesPage() {
   const { data: currentRegister } = useQuery({
     queryKey: ['cash-register-current'],
     queryFn: () => api.get('/cash-register/current').then((res) => res.data).catch(() => null),
+  });
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['settings-current'],
+    queryFn: () => api.get('/settings/current').then((res) => res.data).catch(() => null),
   });
 
   const { data: minimarketContext } = useQuery({
@@ -161,14 +167,35 @@ export default function SalesPage() {
   }, [selectedPromotion, cartSubtotal]);
 
   const estimatedDiscount = bookstoreAutoDiscount + estimatedPromotionDiscount;
-  const estimatedTotal = Math.max(0, cartSubtotal - estimatedDiscount);
+  const taxConfig = {
+    taxEnabled: settingsData?.tax?.taxEnabled !== undefined ? Boolean(settingsData.tax.taxEnabled) : true,
+    pricesIncludeTax: settingsData?.tax?.pricesIncludeTax !== undefined ? Boolean(settingsData.tax.pricesIncludeTax) : false,
+    taxRate: Number(settingsData?.tax?.taxRatePercent || 19) / 100,
+    taxName: String(settingsData?.tax?.taxName || 'IVA'),
+  };
+  const discountedGross = Math.max(0, cartSubtotal - estimatedDiscount);
+  const estimatedNet = !taxConfig.taxEnabled
+    ? discountedGross
+    : taxConfig.pricesIncludeTax
+      ? discountedGross / (1 + taxConfig.taxRate)
+      : discountedGross;
+  const estimatedTax = !taxConfig.taxEnabled
+    ? 0
+    : taxConfig.pricesIncludeTax
+      ? discountedGross - estimatedNet
+      : estimatedNet * taxConfig.taxRate;
+  const estimatedTotal = !taxConfig.taxEnabled
+    ? estimatedNet
+    : taxConfig.pricesIncludeTax
+      ? discountedGross
+      : estimatedNet + estimatedTax;
 
   const splitPaymentPayload = useMemo(() => {
     if (!useSplitPayment) return null;
 
     const cashAmount = Number(cashPaymentAmount || 0);
-    const roundedTotal = Math.round(estimatedTotal);
-    const roundedCash = Math.round(cashAmount);
+    const roundedTotal = toInteger(estimatedTotal);
+    const roundedCash = toInteger(cashAmount);
     const remaining = roundedTotal - roundedCash;
 
     if (roundedCash <= 0 || remaining <= 0) {
@@ -352,7 +379,7 @@ export default function SalesPage() {
                     </p>
                     <p className="text-sm text-gray-500">Stock: {product.stock}</p>
                   </div>
-                  <p className="font-semibold">${Number(product.price).toLocaleString('es-CL')}</p>
+                  <p className="font-semibold">{formatCurrencyInt(product.price)}</p>
                 </button>
               ))}
             </div>
@@ -409,11 +436,11 @@ export default function SalesPage() {
                           }}
                           className="w-16 rounded border px-2 py-1 text-center"
                         />
-                        <span className="text-sm text-gray-500">x ${item.unitPrice.toLocaleString('es-CL')}</span>
+                        <span className="text-sm text-gray-500">x {formatCurrencyInt(item.unitPrice)}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="font-semibold">${(item.unitPrice * item.quantity).toLocaleString('es-CL')}</span>
+                      <span className="font-semibold">{formatCurrencyInt(item.unitPrice * item.quantity)}</span>
                       <button onClick={() => removeFromCart(item.productId)} className="text-red-500">
                         <X className="h-4 w-4" />
                       </button>
@@ -424,17 +451,25 @@ export default function SalesPage() {
                 <div className="border-t pt-3">
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span>Subtotal</span>
-                    <span>${cartSubtotal.toLocaleString('es-CL')}</span>
+                    <span>{formatCurrencyInt(cartSubtotal)}</span>
                   </div>
                   {!!estimatedDiscount && (
                     <div className="mb-2 flex items-center justify-between text-sm font-semibold text-indigo-700">
                       <span>Descuentos estimados</span>
-                      <span>- ${estimatedDiscount.toLocaleString('es-CL')}</span>
+                      <span>- {formatCurrencyInt(estimatedDiscount)}</span>
                     </div>
                   )}
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>Neto</span>
+                    <span>{formatCurrencyInt(estimatedNet)}</span>
+                  </div>
+                  <div className="mb-2 flex items-center justify-between text-sm">
+                    <span>{taxConfig.taxName}</span>
+                    <span>{formatCurrencyInt(estimatedTax)}</span>
+                  </div>
                   <div className="mb-3 flex items-center justify-between text-xl font-bold">
                     <span>Total</span>
-                    <span>${estimatedTotal.toLocaleString('es-CL')}</span>
+                    <span>{formatCurrencyInt(estimatedTotal)}</span>
                   </div>
 
                   {moduleType === 'BOTILLERIA' && hasAlcoholItems && (
@@ -526,7 +561,7 @@ export default function SalesPage() {
                           <option value="QR">QR</option>
                         </select>
                         <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
-                          Restante: ${Math.max(0, Math.round(estimatedTotal) - Math.round(Number(cashPaymentAmount || 0))).toLocaleString('es-CL')}
+                          Restante: {formatCurrencyInt(Math.max(0, toInteger(estimatedTotal) - toInteger(cashPaymentAmount || 0)))}
                         </div>
                       </div>
                     )}
@@ -591,7 +626,7 @@ export default function SalesPage() {
                     <td className="py-3 pr-4">
                       <span className="rounded-full bg-gray-100 px-2 py-1 text-xs">{sale.paymentMethod}</span>
                     </td>
-                    <td className="py-3 pr-4 font-semibold">${Number(sale.total).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4 font-semibold">{formatCurrencyInt(sale.total)}</td>
                     <td className="py-3 pr-4">
                       <span
                         className={`rounded-full px-2 py-1 text-xs ${

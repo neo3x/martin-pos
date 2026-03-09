@@ -229,7 +229,7 @@ export class RestaurantController {
     @Request() req,
     @Param('id') orderId: string,
     @Param('itemId') itemId: string,
-    @Body() data: { quantity?: number; notes?: string; status?: string },
+    @Body() data: { quantity?: number; notes?: string; status?: string; estimatedPrepMinutes?: number },
   ) {
     if (req.user.role === this.kitchenRole && (data.quantity !== undefined || data.notes !== undefined)) {
       throw new ForbiddenException('Cocina solo puede actualizar estado de items');

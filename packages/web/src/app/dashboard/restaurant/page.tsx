@@ -1,13 +1,14 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { BellRing, CheckCircle, Clock, Download, ExternalLink, Plus, Receipt, SendHorizontal, Soup, Users, Utensils, X } from 'lucide-react';
+import { BellRing, CheckCircle, Clock, Download, ExternalLink, Moon, Plus, Receipt, SendHorizontal, Soup, Sun, Users, Utensils, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import toast from 'react-hot-toast';
 import { useAuthStore, type BusinessModule } from '@/store/auth';
+import { formatCurrencyInt, formatInteger, formatMinutes } from '@/lib/number-format';
 
 const TABLE_STATUS_COLORS: Record<string, string> = {
   AVAILABLE: 'bg-emerald-50 border-emerald-200 text-emerald-800',
@@ -36,6 +37,7 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
 };
 
 const RESERVATION_STATUSES = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'];
+const KDS_THEME_STORAGE_KEY = 'omnipunto.kds.theme';
 
 type ReservationForm = {
   id?: string;
@@ -47,6 +49,8 @@ type ReservationForm = {
   status: string;
   notes: string;
 };
+
+type KdsTheme = 'light' | 'dark';
 
 export default function RestaurantPage() {
   const queryClient = useQueryClient();
@@ -77,6 +81,8 @@ export default function RestaurantPage() {
   const [customSplit, setCustomSplit] = useState<Record<string, number>>({});
   const [searchProduct, setSearchProduct] = useState('');
   const [kdsMinWait, setKdsMinWait] = useState('0');
+  const [kdsTheme, setKdsTheme] = useState<KdsTheme>('dark');
+  const [etaPad, setEtaPad] = useState<{ orderId: string; itemId: string; value: string } | null>(null);
   const [tipSuggestionPercentInput, setTipSuggestionPercentInput] = useState('10');
   const [tipAmount, setTipAmount] = useState('0');
   const [seenServiceRequests, setSeenServiceRequests] = useState<string[]>([]);
@@ -170,6 +176,21 @@ export default function RestaurantPage() {
       setActiveTab('kds');
     }
   }, [kitchenOnlyMode, activeTab]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(KDS_THEME_STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark') {
+      setKdsTheme(stored);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!kdsQueue?.settings?.theme) return;
+    const stored = localStorage.getItem(KDS_THEME_STORAGE_KEY);
+    if (!stored && (kdsQueue.settings.theme === 'light' || kdsQueue.settings.theme === 'dark')) {
+      setKdsTheme(kdsQueue.settings.theme);
+    }
+  }, [kdsQueue?.settings?.theme]);
 
   useEffect(() => {
     if (!customerPreviewTableId && tables?.length) {
@@ -579,6 +600,32 @@ export default function RestaurantPage() {
     popup.focus();
   };
 
+  const persistKdsTheme = (nextTheme: KdsTheme) => {
+    setKdsTheme(nextTheme);
+    localStorage.setItem(KDS_THEME_STORAGE_KEY, nextTheme);
+  };
+
+  const kdsThemeClasses =
+    kdsTheme === 'dark'
+      ? {
+          panel: 'border-slate-700 bg-slate-900',
+          card: 'border-slate-700 bg-slate-900',
+          item: 'border-slate-700 bg-slate-800',
+          textPrimary: 'text-slate-100',
+          textSecondary: 'text-slate-400',
+          input: 'border-slate-600 bg-slate-800 text-slate-100',
+          secondaryBtn: 'border-slate-600 text-slate-200 hover:bg-slate-800',
+        }
+      : {
+          panel: 'border-slate-200 bg-white',
+          card: 'border-slate-200 bg-white',
+          item: 'border-slate-200 bg-slate-50',
+          textPrimary: 'text-slate-900',
+          textSecondary: 'text-slate-500',
+          input: 'border-slate-300 bg-white text-slate-900',
+          secondaryBtn: 'border-slate-300 text-slate-700 hover:bg-slate-50',
+        };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -648,7 +695,7 @@ export default function RestaurantPage() {
           {canViewRestaurantAdminMetrics ? (
             <SummaryCard
               label="Ventas hoy / Ticket prom."
-              value={`$${Number(dashboard?.sales?.amount || 0).toLocaleString('es-CL')} / $${Math.round(Number(dashboard?.sales?.averageTicket || 0)).toLocaleString('es-CL')}`}
+              value={`${formatCurrencyInt(dashboard?.sales?.amount || 0)} / ${formatCurrencyInt(dashboard?.sales?.averageTicket || 0)}`}
               icon={<Clock className="h-5 w-5" />}
               tone="bg-slate-100 text-slate-700"
             />
@@ -775,7 +822,7 @@ export default function RestaurantPage() {
                     <p className="mt-1 text-xs">Comensales: {table.currentDiners || 0}</p>
                     <p className="text-xs">Garzón: {order?.waiter ? `${order.waiter.firstName} ${order.waiter.lastName}` : '-'}</p>
                     <p className="text-xs">Tiempo: {table.elapsedMinutes || 0} min</p>
-                    <p className="mt-2 text-xs font-semibold">Saldo: ${remaining.toLocaleString('es-CL')}</p>
+                    <p className="mt-2 text-xs font-semibold">Saldo: {formatCurrencyInt(remaining)}</p>
                     <div className="mt-2 flex flex-wrap gap-1">
                       {!order && canOperateOrder && (
                         <span className="rounded bg-white/70 px-2 py-0.5 text-[10px] font-semibold">Abrir mesa</span>
@@ -881,7 +928,7 @@ export default function RestaurantPage() {
                         <option value="">Seleccionar producto</option>
                         {(products || []).map((product: any) => (
                           <option key={product.id} value={product.id}>
-                            {product.name} (${Number(product.price).toLocaleString('es-CL')})
+                            {product.name} ({formatCurrencyInt(product.price)})
                           </option>
                         ))}
                       </select>
@@ -922,8 +969,8 @@ export default function RestaurantPage() {
                             </p>
                           </div>
                           <div className="text-right">
-                            <p className="text-sm font-bold text-slate-900">${Number(line.subtotal).toLocaleString('es-CL')}</p>
-                            <p className="text-xs text-slate-500">Pendiente ${Number(line.remainingSubtotal).toLocaleString('es-CL')}</p>
+                            <p className="text-sm font-bold text-slate-900">{formatCurrencyInt(line.subtotal)}</p>
+                            <p className="text-xs text-slate-500">Pendiente {formatCurrencyInt(line.remainingSubtotal)}</p>
                           </div>
                         </div>
 
@@ -981,13 +1028,14 @@ export default function RestaurantPage() {
 
                   <div className="space-y-1 border-t border-slate-200 bg-slate-50 px-3 py-3 text-sm">
                     <p>Estado envio: <strong>{account.order?.sentToKitchen ? 'Enviado a cocina' : 'Pendiente de envio'}</strong></p>
-                    <p>Subtotal: <strong>${Number(account.totals.subtotal).toLocaleString('es-CL')}</strong></p>
-                    <p>Total cuenta: <strong>${Number(account.totals.total).toLocaleString('es-CL')}</strong></p>
-                    <p>Total pagado: <strong>${Number(account.totals.paidTotal).toLocaleString('es-CL')}</strong></p>
-                    <p className="text-base">Saldo pendiente: <strong>${Number(account.totals.remainingTotal).toLocaleString('es-CL')}</strong></p>
+                    <p>Neto: <strong>{formatCurrencyInt(account.totals.subtotal)}</strong></p>
+                    <p>{account.totals.taxName || 'Impuesto'}: <strong>{formatCurrencyInt(account.totals.tax)}</strong></p>
+                    <p>Total cuenta: <strong>{formatCurrencyInt(account.totals.total)}</strong></p>
+                    <p>Total pagado: <strong>{formatCurrencyInt(account.totals.paidTotal)}</strong></p>
+                    <p className="text-base">Saldo pendiente: <strong>{formatCurrencyInt(account.totals.remainingTotal)}</strong></p>
                     <p>
                       Propina sugerida ({Number(account.totals.tipSuggestionPercent || 10)}%):
-                      <strong> ${Number(account.totals.suggestedTipOnRemaining || 0).toLocaleString('es-CL')}</strong>
+                      <strong> {formatCurrencyInt(account.totals.suggestedTipOnRemaining || 0)}</strong>
                     </p>
                   </div>
                 </div>
@@ -1108,7 +1156,7 @@ export default function RestaurantPage() {
                     {splitPreviewMutation.data?.data?.split && (
                       <div className="mt-2 rounded-lg border border-indigo-200 bg-white p-2 text-xs text-indigo-800">
                         {splitPreviewMutation.data.data.split.map((item: any) => (
-                          <p key={item.part}>Parte {item.part}: ${Number(item.amount).toLocaleString('es-CL')}</p>
+                          <p key={item.part}>Parte {item.part}: {formatCurrencyInt(item.amount)}</p>
                         ))}
                       </div>
                     )}
@@ -1281,20 +1329,28 @@ export default function RestaurantPage() {
 
       {activeTab === 'kds' && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className={`rounded-2xl border p-4 shadow-sm ${kdsThemeClasses.panel}`}>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-lg font-bold text-slate-900">KDS (Kitchen Display System) Cocina</h2>
-              <div className="flex items-center gap-2">
+              <h2 className={`text-lg font-bold ${kdsThemeClasses.textPrimary}`}>KDS (Kitchen Display System) Cocina</h2>
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="number"
                   min={0}
+                  step={1}
                   value={kdsMinWait}
                   onChange={(e) => setKdsMinWait(e.target.value)}
-                  className="w-24 rounded border border-slate-300 px-2 py-1 text-xs"
+                  className={`w-24 rounded border px-2 py-1 text-xs ${kdsThemeClasses.input}`}
                 />
                 <button
+                  onClick={() => persistKdsTheme(kdsTheme === 'dark' ? 'light' : 'dark')}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${kdsThemeClasses.secondaryBtn}`}
+                >
+                  {kdsTheme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                  {kdsTheme === 'dark' ? 'Modo claro' : 'Modo oscuro'}
+                </button>
+                <button
                   onClick={openKdsStandalone}
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${kdsThemeClasses.secondaryBtn}`}
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   Abrir KDS en ventana
@@ -1310,42 +1366,71 @@ export default function RestaurantPage() {
               </div>
             </div>
             <div className="grid gap-3 md:grid-cols-4">
-              <SummaryCard label="Pendientes" value={`${kdsQueue?.summary?.pending || 0}`} icon={<Soup className="h-4 w-4" />} tone="bg-amber-50 text-amber-700" />
-              <SummaryCard label="Preparando" value={`${kdsQueue?.summary?.preparing || 0}`} icon={<Clock className="h-4 w-4" />} tone="bg-blue-50 text-blue-700" />
-              <SummaryCard label="Listos" value={`${kdsQueue?.summary?.ready || 0}`} icon={<CheckCircle className="h-4 w-4" />} tone="bg-emerald-50 text-emerald-700" />
-              <SummaryCard label="Sobre SLA" value={`${kdsQueue?.summary?.overdue || 0}`} icon={<Clock className="h-4 w-4" />} tone="bg-rose-50 text-rose-700" />
+              <SummaryCard label="Pendientes" value={`${formatInteger(kdsQueue?.summary?.pending || 0)}`} icon={<Soup className="h-4 w-4" />} tone="bg-amber-50 text-amber-700" />
+              <SummaryCard label="Preparando" value={`${formatInteger(kdsQueue?.summary?.preparing || 0)}`} icon={<Clock className="h-4 w-4" />} tone="bg-blue-50 text-blue-700" />
+              <SummaryCard label="Listos" value={`${formatInteger(kdsQueue?.summary?.ready || 0)}`} icon={<CheckCircle className="h-4 w-4" />} tone="bg-emerald-50 text-emerald-700" />
+              <SummaryCard label="Sobre SLA" value={`${formatInteger(kdsQueue?.summary?.overdue || 0)}`} icon={<Clock className="h-4 w-4" />} tone="bg-rose-50 text-rose-700" />
             </div>
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
             {(kdsQueue?.queue || []).map((order: any) => (
-              <div key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-sm font-bold text-slate-900">{order.orderNumber} - Mesa {order.table?.number || '-'}</p>
-                <p className="mb-2 text-xs text-slate-500">Espera: {order.waitMinutes} min</p>
+              <div key={order.id} className={`rounded-2xl border p-4 shadow-sm ${kdsThemeClasses.card}`}>
+                <p className={`text-sm font-bold ${kdsThemeClasses.textPrimary}`}>{order.orderNumber} - Mesa {order.table?.number || '-'}</p>
+                <p className={`mb-2 text-xs ${kdsThemeClasses.textSecondary}`}>Espera: {formatMinutes(order.waitMinutes)}</p>
                 <div className="space-y-2">
                   {(order.items || []).map((item: any) => (
-                    <div key={item.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                    <div key={item.id} className={`rounded-lg border p-2 ${kdsThemeClasses.item}`}>
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-semibold">{item.quantity}x {item.productName}</p>
-                        <span className="text-xs text-slate-500">{item.waitMinutes} min</span>
+                        <p className={`text-sm font-semibold ${kdsThemeClasses.textPrimary}`}>{item.quantity}x {item.productName}</p>
+                        <span className={`text-xs ${item.isOverdue ? 'font-bold text-rose-500' : kdsThemeClasses.textSecondary}`}>{formatMinutes(item.waitMinutes)}</span>
                       </div>
+                      {item.notes && (
+                        <p className={`mt-1 rounded border px-2 py-1 text-xs ${kdsThemeClasses.panel} ${kdsThemeClasses.textSecondary}`}>
+                          Obs: {item.notes}
+                        </p>
+                      )}
                       {canKitchen && (
-                        <select
-                          value={item.status}
-                          onChange={(e) =>
-                            updateItemMutation.mutate({
-                              orderId: order.id,
-                              itemId: item.id,
-                              payload: { status: e.target.value },
-                            })
-                          }
-                          className="mt-2 w-full rounded border border-slate-300 px-2 py-1 text-xs"
-                        >
-                          <option value="PENDING">Pendiente</option>
-                          <option value="PREPARING">Preparando</option>
-                          <option value="READY">Listo</option>
-                          <option value="SERVED">Servido</option>
-                        </select>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {[
+                            { key: 'PENDING', label: 'Pendiente' },
+                            { key: 'PREPARING', label: 'Preparando' },
+                            { key: 'READY', label: 'Listo' },
+                            { key: 'SERVED', label: 'Entregado' },
+                          ].map((option) => (
+                            <button
+                              key={option.key}
+                              onClick={() =>
+                                updateItemMutation.mutate({
+                                  orderId: order.id,
+                                  itemId: item.id,
+                                  payload: { status: option.key },
+                                })
+                              }
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold ${
+                                item.status === option.key
+                                  ? 'bg-indigo-600 text-white'
+                                  : kdsTheme === 'dark'
+                                    ? 'border border-slate-600 bg-slate-900 text-slate-200'
+                                    : 'border border-slate-300 bg-white text-slate-700'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() =>
+                              setEtaPad({
+                                orderId: order.id,
+                                itemId: item.id,
+                                value: String(item.estimatedPrepMinutes || kdsQueue?.settings?.defaultPrepMinutes || 15),
+                              })
+                            }
+                            className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800"
+                          >
+                            ETA {formatInteger(item.estimatedPrepMinutes || 15)}
+                          </button>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -1354,7 +1439,7 @@ export default function RestaurantPage() {
             ))}
           </div>
           {(kdsQueue?.queue || []).length === 0 && (
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
+            <div className={`rounded-xl border border-dashed p-8 text-center text-sm ${kdsThemeClasses.panel} ${kdsThemeClasses.textSecondary}`}>
               No hay items en cola con este filtro.
             </div>
           )}
@@ -1573,6 +1658,24 @@ export default function RestaurantPage() {
         </div>
       )}
 
+      {etaPad && (
+        <NumericKeypadModal
+          title="Tiempo estimado (min)"
+          value={etaPad.value}
+          onClose={() => setEtaPad(null)}
+          onChange={(next) => setEtaPad((prev) => (prev ? { ...prev, value: next } : prev))}
+          onConfirm={() => {
+            const minutes = Math.max(1, Math.round(Number(etaPad.value || 0)));
+            updateItemMutation.mutate({
+              orderId: etaPad.orderId,
+              itemId: etaPad.itemId,
+              payload: { estimatedPrepMinutes: minutes },
+            });
+            setEtaPad(null);
+          }}
+        />
+      )}
+
       {showOpenModal && selectedTable && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
@@ -1635,7 +1738,7 @@ function SummaryCard({
 }: {
   label: string;
   value: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   tone: string;
 }) {
   return (
@@ -1656,6 +1759,84 @@ function StatPill({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
       <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
       <p className="text-sm font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function NumericKeypadModal({
+  title,
+  value,
+  onChange,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  value: string;
+  onChange: (next: string) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const append = (digit: string) => {
+    const clean = String(value || '').replace(/\D/g, '');
+    onChange(`${clean}${digit}`);
+  };
+
+  const backspace = () => {
+    const clean = String(value || '').replace(/\D/g, '');
+    onChange(clean.slice(0, -1));
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl">
+        <p className="text-sm font-bold text-slate-900">{title}</p>
+        <div className="mt-2 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-center text-2xl font-black text-slate-900">
+          {formatInteger(value || 0)}
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+            <button
+              key={digit}
+              onClick={() => append(digit)}
+              className="rounded-lg border border-slate-300 bg-white py-3 text-lg font-semibold text-slate-900 hover:bg-slate-100"
+            >
+              {digit}
+            </button>
+          ))}
+          <button
+            onClick={() => onChange('')}
+            className="rounded-lg border border-amber-300 bg-amber-50 py-3 text-sm font-semibold text-amber-800"
+          >
+            C
+          </button>
+          <button
+            onClick={() => append('0')}
+            className="rounded-lg border border-slate-300 bg-white py-3 text-lg font-semibold text-slate-900 hover:bg-slate-100"
+          >
+            0
+          </button>
+          <button
+            onClick={backspace}
+            className="rounded-lg border border-slate-300 bg-white py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+          >
+            DEL
+          </button>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={onClose}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            className="w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { FileText, Send, Search, CheckCircle, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { formatCurrencyInt } from '@/lib/number-format';
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   DRAFT: { label: 'Borrador', color: 'bg-slate-100 text-slate-600' },
@@ -117,7 +118,7 @@ export default function InvoicesPage() {
                   .filter((s: any) => s.status === 'COMPLETED')
                   .map((sale: any) => (
                     <option key={sale.id} value={sale.id}>
-                      {sale.saleNumber} - ${Number(sale.total).toLocaleString('es-CL')} - {new Date(sale.createdAt).toLocaleDateString('es-CL')}
+                      {sale.saleNumber} - {formatCurrencyInt(sale.total)} - {new Date(sale.createdAt).toLocaleDateString('es-CL')}
                     </option>
                   ))}
               </select>
@@ -178,7 +179,7 @@ export default function InvoicesPage() {
                       <td className="py-3 pr-4 font-medium">{inv.invoiceNumber || '-'}</td>
                       <td className="py-3 pr-4 text-sm">{TYPE_MAP[inv.type] || inv.type}</td>
                       <td className="py-3 pr-4 text-sm">{inv.customerName || '-'}</td>
-                      <td className="py-3 pr-4 font-semibold">${Number(inv.total || 0).toLocaleString('es-CL')}</td>
+                      <td className="py-3 pr-4 font-semibold">{formatCurrencyInt(inv.total || 0)}</td>
                       <td className="py-3 pr-4">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${status.color}`}>{status.label}</span>
                       </td>

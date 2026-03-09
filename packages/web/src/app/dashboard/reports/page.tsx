@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { BarChart3, DollarSign, ShoppingCart, Users, Sparkles } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
+import { formatCurrencyInt, formatInteger } from '@/lib/number-format';
 
 export default function ReportsPage() {
   const moduleType = useAuthStore((state) => state.activeModule || state.user?.moduleType || 'ALL');
@@ -61,25 +62,25 @@ export default function ReportsPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
           label="Ingresos Totales"
-          value={`$${Number(salesReport?.totalRevenue || 0).toLocaleString('es-CL')}`}
+          value={formatCurrencyInt(salesReport?.totalRevenue || 0)}
           icon={<DollarSign className="h-5 w-5 text-green-600" />}
           tone="bg-green-100"
         />
         <SummaryCard
           label="Total Ventas"
-          value={`${salesReport?.totalSales || 0}`}
+          value={formatInteger(salesReport?.totalSales || 0)}
           icon={<ShoppingCart className="h-5 w-5 text-blue-600" />}
           tone="bg-blue-100"
         />
         <SummaryCard
           label="Ticket Promedio"
-          value={`$${Math.round(Number(salesReport?.averageTicket || 0)).toLocaleString('es-CL')}`}
+          value={formatCurrencyInt(salesReport?.averageTicket || 0)}
           icon={<BarChart3 className="h-5 w-5 text-purple-600" />}
           tone="bg-purple-100"
         />
         <SummaryCard
           label="Vendedores/Cajeros"
-          value={`${moduleReport?.sales?.byEmployee?.length || 0}`}
+          value={formatInteger(moduleReport?.sales?.byEmployee?.length || 0)}
           icon={<Users className="h-5 w-5 text-orange-600" />}
           tone="bg-orange-100"
         />
@@ -96,7 +97,7 @@ export default function ReportsPage() {
                     <span className="rounded-full bg-gray-100 px-3 py-1 text-sm font-medium">{method}</span>
                     <span className="text-sm text-gray-500">{data.count} ventas</span>
                   </div>
-                  <span className="font-semibold">${Number(data.total).toLocaleString('es-CL')}</span>
+                  <span className="font-semibold">{formatCurrencyInt(data.total)}</span>
                 </div>
               ))}
             </div>
@@ -115,7 +116,7 @@ export default function ReportsPage() {
                     <p className="font-medium">{employee.name}</p>
                     <p className="text-xs text-slate-500">{employee.role} - {employee.count} ventas</p>
                   </div>
-                  <span className="font-semibold">${Number(employee.revenue).toLocaleString('es-CL')}</span>
+                  <span className="font-semibold">{formatCurrencyInt(employee.revenue)}</span>
                 </div>
               ))}
             </div>
@@ -150,8 +151,8 @@ export default function ReportsPage() {
                   <tr key={product.id || index} className="border-b">
                     <td className="py-3 pr-4 text-sm font-medium text-gray-500">{index + 1}</td>
                     <td className="py-3 pr-4 font-medium">{product.name}</td>
-                    <td className="py-3 pr-4">{product.quantity}</td>
-                    <td className="py-3 pr-4 font-semibold">${Number(product.revenue).toLocaleString('es-CL')}</td>
+                    <td className="py-3 pr-4">{formatInteger(product.quantity)}</td>
+                    <td className="py-3 pr-4 font-semibold">{formatCurrencyInt(product.revenue)}</td>
                   </tr>
                 ))}
               </tbody>

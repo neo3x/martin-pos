@@ -25,6 +25,7 @@ export class PrinterService {
 
   async printSaleReceipt(sale: any): Promise<void> {
     try {
+      const taxLabel = this.getTaxLabel(sale);
       this.printer.clear();
 
       // Header
@@ -74,7 +75,7 @@ export class PrinterService {
       if (Number(sale.discount) > 0) {
         this.printer.println(`Descuento: -${formatCurrency(Number(sale.discount))}`);
       }
-      this.printer.println(`IVA: ${formatCurrency(Number(sale.tax))}`);
+      this.printer.println(`${taxLabel}: ${formatCurrency(Number(sale.tax))}`);
       this.printer.newLine();
       this.printer.setTextSize(1, 1);
       this.printer.bold(true);
@@ -111,6 +112,7 @@ export class PrinterService {
   }
 
   generateReceiptData(sale: any) {
+    const taxLabel = this.getTaxLabel(sale);
     return {
       saleNumber: sale.saleNumber,
       date: formatDate(sale.createdAt, 'long'),
@@ -124,10 +126,16 @@ export class PrinterService {
       })),
       subtotal: formatCurrency(Number(sale.subtotal)),
       discount: formatCurrency(Number(sale.discount)),
+      taxName: taxLabel,
       tax: formatCurrency(Number(sale.tax)),
       total: formatCurrency(Number(sale.total)),
       paymentMethod: this.getPaymentMethodLabel(sale.paymentMethod),
     };
+  }
+
+  private getTaxLabel(sale: any) {
+    const config = sale?.branch?.config || {};
+    return String(config.taxName || 'Impuesto');
   }
 
   private getPaymentMethodLabel(method: string): string {
