@@ -77,7 +77,7 @@ docker-compose up -d
 docker-compose exec backend npx prisma migrate deploy
 
 # 4. Acceder
-# Web: http://localhost:3000
+# Web: http://localhost:3008
 # API: http://localhost:3001
 ```
 
@@ -108,7 +108,7 @@ cp .env.example .env
 Edita `.env`:
 
 ```env
-DATABASE_URL="postgresql://martinpos:martinpos123@localhost:5432/martin_pos?schema=public"
+DATABASE_URL="postgresql://martinpos:martinpos123@localhost:5436/martin_pos?schema=public"
 JWT_SECRET="tu-secreto-aleatorio-muy-seguro"
 ANTHROPIC_API_KEY="tu-api-key"
 # ... etc

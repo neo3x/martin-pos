@@ -92,13 +92,15 @@ create_or_update_env() {
 
   cat > .env <<EOL
 # Database Configuration
-DATABASE_URL="postgresql://martinpos:martinpos123@localhost:5432/martin_pos?schema=public"
+DATABASE_URL="postgresql://martinpos:martinpos123@localhost:5436/martin_pos?schema=public"
 POSTGRES_USER=martinpos
 POSTGRES_PASSWORD=martinpos123
 POSTGRES_DB=martin_pos
+POSTGRES_PORT=5436
 
 # Redis Configuration
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://localhost:6380"
+REDIS_PORT=6380
 
 # JWT
 JWT_SECRET="$jwt_secret"
@@ -110,7 +112,7 @@ OPENAI_API_KEY=""
 
 # App Config
 APP_PORT=3001
-WEB_PORT=3000
+WEB_PORT=3008
 NODE_ENV=development
 NEXT_PUBLIC_API_URL="http://localhost:3001/api/v1"
 

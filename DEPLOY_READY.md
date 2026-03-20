@@ -88,7 +88,7 @@ docker-compose exec backend sh -c "npx prisma migrate dev --name init --schema=.
 docker-compose exec backend sh -c "npx prisma db seed --schema=./prisma/schema.prisma"
 
 # 4. Access
-# Web: http://localhost:3000
+# Web: http://localhost:3008
 # API: http://localhost:3001/api/v1
 # API Health: http://localhost:3001/health
 ```
@@ -108,7 +108,7 @@ docker-compose exec backend sh -c "npx prisma db seed --schema=./prisma/schema.p
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| DATABASE_URL | PostgreSQL connection string | `postgresql://martinpos:martinpos123@localhost:5432/martin_pos?schema=public` |
+| DATABASE_URL | PostgreSQL connection string | `postgresql://martinpos:martinpos123@localhost:5436/martin_pos?schema=public` |
 | JWT_SECRET | JWT signing secret | `your-super-secret-jwt-key-change-in-production` |
 
 ### Optional

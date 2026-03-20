@@ -48,7 +48,8 @@ echo "⚙️  Configurando entorno..."
 # Create .env file
 cat > .env << EOL
 # Database
-DATABASE_URL="postgresql://martinpos:martinpos123@localhost:5432/martin_pos?schema=public"
+DATABASE_URL="postgresql://martinpos:martinpos123@localhost:5436/martin_pos?schema=public"
+POSTGRES_PORT=5436
 
 # JWT
 JWT_SECRET="$(openssl rand -base64 32)"
@@ -60,7 +61,7 @@ OPENAI_API_KEY=""
 
 # App Config
 APP_PORT=3001
-WEB_PORT=3000
+WEB_PORT=3008
 NODE_ENV=development
 
 # Módulo instalado

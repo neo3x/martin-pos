@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-martin_pos}
       POSTGRES_USER: ${POSTGRES_USER:-martinpos}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-martinpos123}
+    ports:
+      - '${POSTGRES_PORT:-5436}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -85,8 +87,7 @@ services:
     image: nginx:alpine
     container_name: martin-pos-nginx
     ports:
-      - '80:80'
-      - '443:443'
+      - '${WEB_PORT:-3008}:80'
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./ssl:/etc/nginx/ssl:ro
